@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useCalendarStore } from "@/stores/calendarStore"
-import type { CalendarEvent, EmailDraft } from "@/types"
+import type { EmailDraft } from "@/types"
 
 function EmailRow({ draft, eventId }: { draft: EmailDraft; eventId: string }) {
   const toggle = useCalendarStore((s) => s.toggleEmailSelected)
