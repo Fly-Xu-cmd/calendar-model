@@ -1,11 +1,15 @@
 import { create } from "zustand"
 import { format, addDays, startOfWeek, addWeeks, subWeeks } from "date-fns"
-import type { CalendarEvent, PageView } from "@/types"
+import type { CalendarEvent, PageView, TrustMode } from "@/types"
 
 interface CalendarState {
   currentDate: Date
   events: CalendarEvent[]
   pageView: PageView
+  selectedEventId: string | null
+  trustMode: TrustMode
+  editingLinkedin: boolean
+  editedLinkedinDraft: string
 
   setCurrentDate: (date: Date) => void
   setPageView: (view: PageView) => void
@@ -13,109 +17,216 @@ interface CalendarState {
   prevWeek: () => void
   addEvent: (event: CalendarEvent) => void
   removeEvent: (id: string) => void
+  selectEvent: (id: string | null) => void
+  confirmEvent: (id: string) => void
+  skipEvent: (id: string) => void
+  setTrustMode: (mode: TrustMode) => void
+  toggleEmailSelected: (eventId: string, emailId: string) => void
+  setEditingLinkedin: (editing: boolean) => void
+  setEditedLinkedinDraft: (draft: string) => void
+  confirmWithEdit: (id: string, newDraft: string) => void
 }
 
 const today = new Date()
 const ws = startOfWeek(today, { weekStartsOn: 1 })
 const fmt = (d: Date) => format(d, "yyyy-MM-dd")
 
+const todayStr = fmt(today)
+const day0 = fmt(ws)
+const day1 = fmt(addDays(ws, 1))
+const day2 = fmt(addDays(ws, 2))
+const day3 = fmt(addDays(ws, 3))
+const day4 = fmt(addDays(ws, 4))
+
+const dayOfWeek = today.getDay()
+const mondayBased = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+
 const mockEvents: CalendarEvent[] = [
   {
-    id: "1",
-    title: "提取10条科技新闻并整理推送",
-    date: fmt(addDays(ws, 2)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
+    id: "personal-1",
+    title: "带看 Worthington 房源",
+    date: todayStr,
+    startTime: "10:00",
+    endTime: "11:00",
+    color: "blue",
+    tags: ["带看"],
   },
   {
-    id: "2",
-    title: "抓取哥伦布富兰克林县新房源并生成LinkedIn推广帖",
-    date: fmt(addDays(ws, 2)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
+    id: "personal-2",
+    title: "签约会议 — Johnson 家庭",
+    date: todayStr,
+    startTime: "14:00",
+    endTime: "15:30",
+    color: "purple",
+    tags: ["签约"],
   },
   {
-    id: "3",
-    title: "提取10条科技新闻并整理推送",
-    date: fmt(addDays(ws, 3)),
+    id: "ai-today",
+    title: "哥伦布今日市场速报 — 富兰克林县 3 套新房源",
+    date: todayStr,
     startTime: "09:00",
     endTime: "09:30",
     color: "amber",
-    tags: ["待执行"],
+    tags: ["自动生成", "待你确认"],
+    status: "draft",
+    isAiGenerated: true,
+    aiContent: {
+      marketOverview: "富兰克林县独栋住宅市场活跃，新增 3 套房源进入目标价位区间。买家竞争加剧，平均 DOM 缩短至 18 天。",
+      medianPrice: "$287,500",
+      priceChange: "↑1.2%",
+      inventory: 342,
+      newListings: 3,
+      listings: [
+        { address: "1847 Summit St", price: "$265,000", beds: 3, baths: 2, daysOnMarket: 1 },
+        { address: "923 E Broad St", price: "$310,000", beds: 4, baths: 2.5, daysOnMarket: 1 },
+        { address: "4501 Refugee Rd", price: "$189,000", beds: 2, baths: 1, daysOnMarket: 1 },
+      ],
+      linkedinDraft:
+        "你们有没有注意到最近 Clintonville 的房子上得越来越快了？🏠 今天富兰克林县又多了三套独栋——Summit St 那套 $265k，三居室，对年轻家庭来说真的很 solid。想知道现在入手的时机对不对？来聊👇",
+      emailDrafts: [
+        {
+          id: "email-1",
+          to: "Sarah Martinez",
+          subject: "🏠 Summit St 新房源 — 符合您的需求",
+          preview: "Hi Sarah，1847 Summit St 今天刚上市，3 居室 $265k，Clintonville 学区……",
+          selected: true,
+        },
+        {
+          id: "email-2",
+          to: "David Chen",
+          subject: "刚上市：E Broad St 4居室独栋",
+          preview: "Hi David，923 E Broad St 今天上市，4 居室 2.5 卫，$310k……",
+          selected: true,
+        },
+        {
+          id: "email-3",
+          to: "Mike Johnson",
+          subject: "Refugee Rd 超值房源 $189k",
+          preview: "Hi Mike，4501 Refugee Rd 今天上市，2 居室 $189k，入门级好选择……",
+          selected: true,
+        },
+      ],
+    },
+  },
+  ...(mondayBased >= 1
+    ? [
+        {
+          id: "ai-yesterday",
+          title: "今日市场速报 — 已自动发布 ✅",
+          date: fmt(addDays(today, -1)),
+          startTime: "09:00",
+          endTime: "09:30",
+          color: "green" as const,
+          tags: ["LinkedIn 帖子已发", "2 封邮件已发"],
+          status: "auto-published" as const,
+          isAiGenerated: true,
+          aiContent: {
+            marketOverview: "昨日市场稳定，2 套新增房源已自动推广。",
+            medianPrice: "$285,000",
+            priceChange: "↑0.8%",
+            inventory: 340,
+            newListings: 2,
+            listings: [
+              { address: "320 Oakland Park Ave", price: "$275,000", beds: 3, baths: 2, daysOnMarket: 2 },
+              { address: "1560 Bryden Rd", price: "$230,000", beds: 3, baths: 1.5, daysOnMarket: 2 },
+            ],
+            linkedinDraft:
+              "哥伦布的朋友们，Oakland Park 那边出了套很有意思的房子 🏡 3居室 $275k，社区成熟，步行可到公园。Bryden Rd 也有套 $230k 的——首次购房者可以认真看看。市场不等人，有问题随时问我👇",
+            emailDrafts: [
+              {
+                id: "email-y1",
+                to: "Lisa Wang",
+                subject: "Oakland Park Ave 新房源推荐",
+                preview: "Hi Lisa，320 Oakland Park Ave 3 居室 $275k……",
+                selected: true,
+              },
+              {
+                id: "email-y2",
+                to: "Tom Brown",
+                subject: "Bryden Rd 入门级房源",
+                preview: "Hi Tom，1560 Bryden Rd $230k，适合首次购房……",
+                selected: true,
+              },
+            ],
+          },
+        },
+      ]
+    : []),
+  {
+    id: "ai-tomorrow",
+    title: "哥伦布今日市场 — 无新增独栋住宅",
+    date: fmt(addDays(today, 1)),
+    startTime: "09:00",
+    endTime: "09:30",
+    color: "amber",
+    tags: ["自动生成", "待你确认"],
+    status: "draft",
+    isAiGenerated: true,
+    aiContent: {
+      marketOverview: "今日富兰克林县目标价位区间内无新增独栋住宅。市场整体库存微降，中位价小幅回调。",
+      medianPrice: "$289,000",
+      priceChange: "↓0.3%",
+      inventory: 338,
+      newListings: 0,
+      listings: [],
+      linkedinDraft:
+        `哥伦布今天没有新上的房子，但这不代表市场在休息 📊 富兰克林县的库存降到了 338 套，比上周少了 4 套。如果你一直在等那个"完美时机"——市场正在慢慢收紧。想聊聊现在的策略？DM 我👇`,
+      emailDrafts: [],
+    },
   },
   {
-    id: "4",
-    title: "抓取哥伦布富兰克林县新房源并生成LinkedIn推广帖",
-    date: fmt(addDays(ws, 3)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
+    id: "personal-3",
+    title: "团队周会",
+    date: fmt(addDays(today, 1)),
+    startTime: "11:00",
+    endTime: "12:00",
+    color: "blue",
+    tags: ["Keller Williams"],
   },
   {
-    id: "5",
-    title: "提取10条科技新闻并整理推送",
-    date: fmt(addDays(ws, 4)),
+    id: "ai-day3",
+    title: "哥伦布今日市场速报 — 富兰克林县 5 套新房源",
+    date: fmt(addDays(today, 2)),
     startTime: "09:00",
     endTime: "09:30",
     color: "amber",
-    tags: ["待执行"],
-  },
-  {
-    id: "6",
-    title: "抓取哥伦布富兰克林县新房源并生成LinkedIn推广帖",
-    date: fmt(addDays(ws, 4)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
-  },
-  {
-    id: "7",
-    title: "提取10条科技新闻并整理推送",
-    date: fmt(addDays(ws, 5)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
-  },
-  {
-    id: "8",
-    title: "抓取哥伦布富兰克林县新房源并生成LinkedIn推广帖",
-    date: fmt(addDays(ws, 5)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
-  },
-  {
-    id: "9",
-    title: "提取10条科技新闻并整理推送",
-    date: fmt(addDays(ws, 6)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
-  },
-  {
-    id: "10",
-    title: "抓取哥伦布富兰克林县新房源并生成LinkedIn推广帖",
-    date: fmt(addDays(ws, 6)),
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["待执行"],
+    tags: ["自动生成", "待你确认"],
+    status: "draft",
+    isAiGenerated: true,
+    aiContent: {
+      marketOverview: "本周新增房源量创新高，5 套独栋住宅进入目标区间，其中 2 套位于热门学区。",
+      medianPrice: "$291,000",
+      priceChange: "↑2.1%",
+      inventory: 345,
+      newListings: 5,
+      listings: [
+        { address: "2150 N High St", price: "$298,000", beds: 3, baths: 2, daysOnMarket: 1 },
+        { address: "845 Indianola Ave", price: "$275,000", beds: 3, baths: 1.5, daysOnMarket: 1 },
+        { address: "3901 Karl Rd", price: "$210,000", beds: 3, baths: 1, daysOnMarket: 1 },
+        { address: "1277 Genessee Ave", price: "$325,000", beds: 4, baths: 2, daysOnMarket: 1 },
+        { address: "560 Walhalla Rd", price: "$195,000", beds: 2, baths: 1, daysOnMarket: 1 },
+      ],
+      linkedinDraft:
+        "周中爆发！🔥 今天富兰克林县一口气多了 5 套独栋——N High St 那套 $298k 是 Clintonville 学区，Indianola Ave 的 $275k 也很抢手。这周的市场节奏明显在加快，库存 345 套但消化速度也快。你在关注哪个区域？评论区告诉我👇",
+      emailDrafts: [
+        { id: "email-d3-1", to: "Sarah Martinez", subject: "N High St 学区房推荐", preview: "Hi Sarah，2150 N High St……", selected: true },
+        { id: "email-d3-2", to: "David Chen", subject: "Indianola Ave 新上市", preview: "Hi David，845 Indianola……", selected: true },
+        { id: "email-d3-3", to: "Lisa Wang", subject: "Karl Rd 高性价比房源", preview: "Hi Lisa，3901 Karl Rd $210k……", selected: true },
+        { id: "email-d3-4", to: "Jennifer Liu", subject: "Genessee Ave 4居室", preview: "Hi Jennifer，1277 Genessee……", selected: true },
+        { id: "email-d3-5", to: "Mike Johnson", subject: "Walhalla Rd 入门好选择", preview: "Hi Mike，560 Walhalla Rd $195k……", selected: true },
+      ],
+    },
   },
 ]
 
-export const useCalendarStore = create<CalendarState>((set) => ({
+export const useCalendarStore = create<CalendarState>((set, get) => ({
   currentDate: today,
   events: mockEvents,
   pageView: "calendar",
+  selectedEventId: null,
+  trustMode: "confirm",
+  editingLinkedin: false,
+  editedLinkedinDraft: "",
 
   setCurrentDate: (date) => set({ currentDate: date }),
   setPageView: (view) => set({ pageView: view }),
@@ -124,4 +235,103 @@ export const useCalendarStore = create<CalendarState>((set) => ({
   addEvent: (event) => set((s) => ({ events: [...s.events, event] })),
   removeEvent: (id) =>
     set((s) => ({ events: s.events.filter((e) => e.id !== id) })),
+
+  selectEvent: (id) => {
+    const ev = id ? get().events.find((e) => e.id === id) : null
+    set({
+      selectedEventId: id,
+      editingLinkedin: false,
+      editedLinkedinDraft: ev?.aiContent?.linkedinDraft ?? "",
+    })
+  },
+
+  confirmEvent: (id) =>
+    set((s) => ({
+      events: s.events.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              status: "confirmed",
+              tags: ["LinkedIn 帖子已发", `${e.aiContent?.emailDrafts.filter((d) => d.selected).length ?? 0} 封邮件已发`],
+              title: e.title.replace("待你确认", "").replace("新房源", "新房源 ✅").trim(),
+            }
+          : e,
+      ),
+    })),
+
+  skipEvent: (id) =>
+    set((s) => ({
+      events: s.events.map((e) =>
+        e.id === id
+          ? { ...e, status: "skipped", tags: ["已跳过"] }
+          : e,
+      ),
+    })),
+
+  setTrustMode: (mode) =>
+    set((s) => ({
+      trustMode: mode,
+      events: s.events.map((e) => {
+        if (!e.isAiGenerated) return e
+        if (mode === "auto" && e.status === "draft") {
+          return {
+            ...e,
+            status: "auto-published" as const,
+            tags: ["LinkedIn 帖子已发", `${e.aiContent?.emailDrafts.length ?? 0} 封邮件已发`],
+            title: e.title.includes("无新增")
+              ? "今日市场速报 — 已自动发布 ✅"
+              : `今日市场速报 — ${e.aiContent?.newListings ?? 0} 套新房源 · 已自动发布 ✅`,
+          }
+        }
+        if (mode === "confirm" && e.status === "auto-published") {
+          return {
+            ...e,
+            status: "draft" as const,
+            tags: ["自动生成", "待你确认"],
+            title: e.aiContent?.newListings
+              ? `哥伦布今日市场速报 — 富兰克林县 ${e.aiContent.newListings} 套新房源`
+              : "哥伦布今日市场 — 无新增独栋住宅",
+          }
+        }
+        return e
+      }),
+    })),
+
+  toggleEmailSelected: (eventId, emailId) =>
+    set((s) => ({
+      events: s.events.map((e) =>
+        e.id === eventId && e.aiContent
+          ? {
+              ...e,
+              aiContent: {
+                ...e.aiContent,
+                emailDrafts: e.aiContent.emailDrafts.map((d) =>
+                  d.id === emailId ? { ...d, selected: !d.selected } : d,
+                ),
+              },
+            }
+          : e,
+      ),
+    })),
+
+  setEditingLinkedin: (editing) => set({ editingLinkedin: editing }),
+  setEditedLinkedinDraft: (draft) => set({ editedLinkedinDraft: draft }),
+
+  confirmWithEdit: (id, newDraft) =>
+    set((s) => ({
+      editingLinkedin: false,
+      events: s.events.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              status: "confirmed" as const,
+              tags: ["LinkedIn 帖子已发", `${e.aiContent?.emailDrafts.filter((d) => d.selected).length ?? 0} 封邮件已发`],
+              title: e.title.replace("待你确认", "").trim() + " ✅",
+              aiContent: e.aiContent
+                ? { ...e.aiContent, linkedinDraft: newDraft }
+                : e.aiContent,
+            }
+          : e,
+      ),
+    })),
 }))

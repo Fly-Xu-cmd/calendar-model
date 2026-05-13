@@ -1,125 +1,289 @@
 import { create } from "zustand"
 import type { ChatMessage } from "@/types"
 
+type ChatBranch = "main" | "adjust-style" | "adjust-range" | "adjust-direction"
+
 interface ChatState {
   messages: ChatMessage[]
   inputValue: string
   isTyping: boolean
+  step: number
+  branch: ChatBranch
 
   setInputValue: (v: string) => void
   sendMessage: (content: string) => void
 }
 
-const mockFlow: ChatMessage[] = [
-  {
-    id: "m1",
-    role: "assistant",
-    content:
-      "LinkedIn Listing Posts Agent 开始构建了 🚀 它会：",
-    timestamp: new Date(),
-    icon: "build",
-  },
-  {
-    id: "m2",
-    role: "assistant",
-    content:
-      "1. 抓取并分析你的 LinkedIn 帖子风格\n2. 从房源监控数据库中读取最新房源\n3. 模仿你的风格生成帖子\n4. 先发邮件给你审核，确认后发布到 LinkedIn",
-    timestamp: new Date(),
-  },
-  {
-    id: "m3",
-    role: "assistant",
-    content: "构建完成后我会通知你，并帮两个 Agent 都设好每天早上9点的定时任务 ⏰",
-    timestamp: new Date(),
-  },
-  {
-    id: "m4",
-    role: "assistant",
-    content: "Building LinkedIn Listing Posts",
-    timestamp: new Date(),
-    icon: "task",
-    subProcesses: [
-      {
-        id: "sp1",
-        title: "Reviewing workflow guidance",
-        status: "done",
-        detail: "已读取工作流配置文件，确认发帖流程为：抓取 → 生成 → 审核 → 发布。",
-      },
-      {
-        id: "sp2",
-        title: "Inspecting listing database",
-        status: "done",
-        children: [
-          {
-            id: "sp2-1",
-            title: "Database schema (4 tables)",
-            status: "done",
-            detail: "listings, agents, markets, posts 四张表结构已确认。",
-          },
-          {
-            id: "sp2-2",
-            title: "Connecting LinkedIn for approved post publishing",
-            status: "running",
-          },
-        ],
-      },
-      {
-        id: "sp3",
-        title: "Scraping LinkedIn voice samples",
-        status: "running",
-        children: [
-          {
-            id: "sp3-1",
-            title: "Scraping the example LinkedIn post for writing style",
-            status: "running",
-          },
-          {
-            id: "sp3-2",
-            title: "Scraping the LinkedIn profile for voice and brand context",
-            status: "running",
-          },
-        ],
-      },
-    ],
-  },
-]
+function detectBranch(content: string, currentStep: number): ChatBranch | null {
+  if (currentStep < 4) return null
+  const lower = content.toLowerCase()
+  if (lower.includes("风格") || lower.includes("太书面") || lower.includes("不像我") || lower.includes("语气"))
+    return "adjust-style"
+  if (lower.includes("范围") || lower.includes("价格") || lower.includes("天内") || lower.includes("太多") || lower.includes("太少"))
+    return "adjust-range"
+  if (lower.includes("方向") || lower.includes("周报") || lower.includes("改成") || lower.includes("节奏"))
+    return "adjust-direction"
+  return null
+}
 
-let step = 0
+function createReply(step: number, branch: ChatBranch): ChatMessage[] {
+  if (branch === "adjust-style") {
+    return [
+      {
+        id: `r-${Date.now()}-style`,
+        role: "assistant",
+        content:
+          '收到，我重新分析了你最喜欢的第 3 篇和第 5 篇帖子。调整后的风格更口语化，多用 emoji 和第二人称。\n\n新版本：\n\n"你们有没有注意到最近 Clintonville 的房子上得越来越快了？🏠 今天富兰克林县又多了两套——Summit St 那套 $265k 真的值得去看看。想知道现在上车是不是好时机？来聊👇"',
+        timestamp: new Date(),
+        actions: [
+          { id: "a-style-ok", label: "✅ 这个感觉对了", variant: "primary" },
+          { id: "a-style-retry", label: "还是不太对，我再说说", variant: "secondary" },
+        ],
+      },
+    ]
+  }
+
+  if (branch === "adjust-range") {
+    return [
+      {
+        id: `r-${Date.now()}-range`,
+        role: "assistant",
+        content:
+          "好的，已更新筛选条件：\n\n• 价格范围：**$150k - $400k**\n• 包含最近 **3 天内**上市且仍在售的房源\n\n按新条件重新运行，今日结果：**7 套房源**（比之前的 3 套多了 4 套）",
+        timestamp: new Date(),
+        actions: [
+          { id: "a-range-ok", label: "✅ 差不多了", variant: "primary" },
+          { id: "a-range-more", label: "还是太多/太少", variant: "secondary" },
+        ],
+      },
+    ]
+  }
+
+  if (branch === "adjust-direction") {
+    return [
+      {
+        id: `r-${Date.now()}-dir`,
+        role: "assistant",
+        content:
+          "明白，已调整节奏：\n\n📅 **每天 9:00 AM**\n• 邮件汇总 + 日历事件（不发 LinkedIn）\n\n📅 **每周一 9:00 AM**\n• 市场周报 + LinkedIn 帖子草稿\n\n其他设置保持不变（独栋住宅，$200k-$400k，Franklin County）。",
+        timestamp: new Date(),
+        actions: [
+          { id: "a-dir-ok", label: "✅ 就这样", variant: "primary" },
+          { id: "a-dir-change", label: "再调调", variant: "secondary" },
+        ],
+      },
+    ]
+  }
+
+  switch (step) {
+    case 0:
+      return [
+        {
+          id: `r-${Date.now()}-0`,
+          role: "assistant",
+          content:
+            "收到。关于富兰克林县的新房源监控，我需要确认几个细节：\n\n**你关注哪类房产？**",
+          timestamp: new Date(),
+          actions: [
+            { id: "a-sfh", label: "🏠 独栋住宅", variant: "primary" },
+            { id: "a-condo", label: "🏢 公寓/联排", variant: "secondary" },
+            { id: "a-all", label: "📋 所有住宅类型", variant: "secondary" },
+          ],
+        },
+      ]
+
+    case 1:
+      return [
+        {
+          id: `r-${Date.now()}-1a`,
+          role: "assistant",
+          content: "好的，独栋住宅。\n\n**价格范围有偏好吗？**",
+          timestamp: new Date(),
+          actions: [
+            { id: "a-price-all", label: "不限", variant: "secondary" },
+            { id: "a-price-low", label: "$200k 以下", variant: "secondary" },
+            { id: "a-price-mid", label: "$200k - $400k", variant: "primary" },
+            { id: "a-price-high", label: "$400k 以上", variant: "secondary" },
+          ],
+        },
+      ]
+
+    case 2:
+      return [
+        {
+          id: `r-${Date.now()}-2`,
+          role: "assistant",
+          content:
+            "好的，独栋住宅，$200k-$400k。接下来关于你的 LinkedIn 发帖风格——\n\n**请把你写过的帖子发给我。** 你可以：",
+          timestamp: new Date(),
+          actions: [
+            { id: "a-paste", label: "📋 粘贴帖子文字", variant: "primary" },
+            { id: "a-link", label: "🔗 发送 LinkedIn 帖子链接", variant: "secondary" },
+          ],
+        },
+      ]
+
+    case 3:
+      return [
+        {
+          id: `r-${Date.now()}-3`,
+          role: "assistant",
+          content:
+            '我分析了你的帖子。你的风格是：**开头用一个反问句或数据引入，中间给出本地市场分析，结尾附行动号召，语气是专业但亲和的——像朋友间聊天但你是那个懂行的朋友。**\n\n以下是我将为你做的事：\n\n📅 **每天早上 9 点自动执行：**\n1. 抓取富兰克林县当日新上市的独栋住宅（$200k-$400k）\n2. 汇总哥伦布市整体市场数据（中位价、库存、趋势）\n3. 用你的风格生成一篇 LinkedIn 帖子草稿\n4. 为每套新房源生成一封个性化推广邮件草稿\n5. 将以上内容推送到你的日历作为 9:00 AM 日程事件，**等你确认后再发布**',
+          timestamp: new Date(),
+          actions: [
+            { id: "a-build", label: "🟦 开始构建", variant: "primary" },
+            { id: "a-adjust", label: "⬜ 我想调整", variant: "secondary" },
+          ],
+        },
+      ]
+
+    case 4:
+      return [
+        {
+          id: `r-${Date.now()}-4a`,
+          role: "assistant",
+          content: "开始构建 LinkedIn Listing Posts Agent 🚀",
+          timestamp: new Date(),
+          icon: "build",
+        },
+        {
+          id: `r-${Date.now()}-4b`,
+          role: "assistant",
+          content: "Building LinkedIn Listing Posts Agent",
+          timestamp: new Date(),
+          icon: "task",
+          subProcesses: [
+            {
+              id: "sp1",
+              title: "连接哥伦布房产数据源",
+              status: "done",
+              detail: "已连接 Franklin County MLS 数据接口，数据延迟 < 15 分钟。",
+            },
+            {
+              id: "sp2",
+              title: "分析你的 5 篇 LinkedIn 帖子风格",
+              status: "done",
+              detail:
+                "风格摘要：开头反问句/数据引入，中间本地市场分析，结尾行动号召。语气专业且亲和，常用 emoji，第二人称拉近距离。",
+            },
+            {
+              id: "sp3",
+              title: "创建富兰克林县新房源监控",
+              status: "done",
+              detail: "监控条件：独栋住宅，$200k-$400k，Franklin County，每日 8:30 AM 运行。",
+              children: [
+                {
+                  id: "sp3-1",
+                  title: "配置数据筛选规则",
+                  status: "done",
+                  detail: "房产类型：Single Family\n价格区间：$200,000 - $400,000\n区域：Franklin County, OH",
+                },
+                { id: "sp3-2", title: "设置新房源变更检测", status: "done" },
+              ],
+            },
+            {
+              id: "sp4",
+              title: "LinkedIn 授权",
+              status: "done",
+              detail: "OAuth 授权成功，已获得发帖权限。",
+            },
+            {
+              id: "sp5",
+              title: "日历授权",
+              status: "done",
+              detail: "Notion Calendar 授权成功，已获得日程创建权限。",
+            },
+            {
+              id: "sp6",
+              title: "进行第一次试运行",
+              status: "done",
+              children: [
+                {
+                  id: "sp6-1",
+                  title: "抓取今日富兰克林县新增房源",
+                  status: "done",
+                  detail: "今日新增 3 套独栋住宅（$200k-$400k 区间）。",
+                },
+                {
+                  id: "sp6-2",
+                  title: "生成 LinkedIn 帖子草稿",
+                  status: "done",
+                  detail: "已用你的风格生成帖子草稿，包含今日市场数据和新房源亮点。",
+                },
+                { id: "sp6-3", title: "生成 3 封个性化推广邮件", status: "done" },
+                { id: "sp6-4", title: "写入日历日程事件", status: "done" },
+              ],
+            },
+          ],
+        },
+        {
+          id: `r-${Date.now()}-4c`,
+          role: "assistant",
+          content:
+            '✅ **"哥伦布市场速报"构建完成，首次运行已交付**\n\n📊 今日富兰克林县：3 套新增独栋住宅\n• 1847 Summit St — $265,000 · 3bed/2bath\n• 923 E Broad St — $310,000 · 4bed/2.5bath\n• 4501 Refugee Rd — $189,000 · 2bed/1bath\n\n✉️ LinkedIn 帖子草稿：\n"你们有没有注意到最近 Clintonville 的房子上得越来越快了？🏠 今天富兰克林县又多了三套独栋——Summit St 那套 $265k，三居室，对年轻家庭来说真的很 solid。想知道现在入手的时机对不对？来聊👇"\n\n📧 3 封推广邮件草稿已生成\n📅 已在你的日历上创建 9:00 AM 日程事件',
+          timestamp: new Date(),
+          actions: [
+            { id: "a-auto", label: "🟦 满意，设为每日自动", variant: "primary" },
+            { id: "a-tweak", label: "⬜ 我想调整", variant: "secondary" },
+          ],
+        },
+      ]
+
+    default:
+      return [
+        {
+          id: `r-${Date.now()}-done`,
+          role: "assistant",
+          content:
+            '✅ 已设为每日自动！\n\n从明天起，每天早上 9:00 我会自动执行以上流程，结果以日程事件形态推送到你的日历。\n\n第一周我会等你确认后再发布。等你觉得质量稳定了，随时可以在日历事件里点「🔓 以后不用确认，直接发」切换为全自动模式。\n\n你也可以随时跟我说：\n• **"帖子风格不太像我"** → 我会调整写作风格\n• **"价格范围改一下"** → 我会更新筛选条件\n• **"LinkedIn 改成每周一发"** → 我会调整发布节奏',
+          timestamp: new Date(),
+        },
+      ]
+  }
+}
 
 function scheduleReply(
   set: (fn: (s: ChatState) => Partial<ChatState>) => void,
+  get: () => ChatState,
 ) {
   set(() => ({ isTyping: true }))
 
-  const batchEnd = Math.min(step + 3, mockFlow.length)
+  const { step, branch } = get()
+  const replies = createReply(step, branch)
+
   let delay = 0
 
-  for (let i = step; i < batchEnd; i++) {
-    const msg = mockFlow[i]
+  replies.forEach((msg) => {
     const d = delay
     setTimeout(() => {
-      set((s) => ({
-        messages: [...s.messages, { ...msg, id: `msg-${Date.now()}-${i}`, timestamp: new Date() }],
-      }))
+      set((s) => ({ messages: [...s.messages, msg] }))
     }, d)
-    delay += msg.subProcesses ? 800 : 400
-  }
+    delay += msg.subProcesses ? 1200 : 600
+  })
 
   setTimeout(() => {
-    set(() => ({ isTyping: false }))
+    const s = get()
+    if (s.branch !== "main") {
+      set(() => ({ isTyping: false, branch: "main" }))
+    } else {
+      set((s) => ({ isTyping: false, step: s.step + 1 }))
+    }
   }, delay)
-
-  step = batchEnd
 }
 
-export const useChatStore = create<ChatState>((set) => ({
+export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   inputValue: "",
   isTyping: false,
+  step: 0,
+  branch: "main",
 
   setInputValue: (v) => set({ inputValue: v }),
 
   sendMessage: (content: string) => {
+    if (get().isTyping) return
+
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: "user",
@@ -130,6 +294,12 @@ export const useChatStore = create<ChatState>((set) => ({
       messages: [...s.messages, userMsg],
       inputValue: "",
     }))
-    scheduleReply(set)
+
+    const detectedBranch = detectBranch(content, get().step)
+    if (detectedBranch) {
+      set({ branch: detectedBranch })
+    }
+
+    scheduleReply(set, get)
   },
 }))
