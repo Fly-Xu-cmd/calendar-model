@@ -98,9 +98,6 @@ function SubProcessNode({ sub, depth = 0 }: { sub: SubProcess; depth?: number })
 }
 
 function AgentCard({ message }: { message: ChatMessage }) {
-  const sendMessage = useChatStore((s) => s.sendMessage)
-  const isTyping = useChatStore((s) => s.isTyping)
-
   const isUser = message.role === "user"
   const hasSubProcesses = message.subProcesses && message.subProcesses.length > 0
 

@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { format, addDays, startOfWeek, addWeeks, subWeeks } from "date-fns"
+import { format, addDays, addWeeks, subWeeks } from "date-fns"
 import type { CalendarEvent, PageView, TrustMode } from "@/types"
 
 interface CalendarState {
@@ -28,15 +28,9 @@ interface CalendarState {
 }
 
 const today = new Date()
-const ws = startOfWeek(today, { weekStartsOn: 1 })
 const fmt = (d: Date) => format(d, "yyyy-MM-dd")
 
 const todayStr = fmt(today)
-const day0 = fmt(ws)
-const day1 = fmt(addDays(ws, 1))
-const day2 = fmt(addDays(ws, 2))
-const day3 = fmt(addDays(ws, 3))
-const day4 = fmt(addDays(ws, 4))
 
 const dayOfWeek = today.getDay()
 const mondayBased = dayOfWeek === 0 ? 6 : dayOfWeek - 1
