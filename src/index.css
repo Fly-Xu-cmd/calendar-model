@@ -113,6 +113,57 @@
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
+@keyframes ai-icon-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.ai-icon-spin-hover {
+  transform-origin: center center;
+  will-change: transform;
+  animation: ai-icon-spin 6s linear infinite;
+  animation-play-state: paused;
+}
+[data-ai-event-row]:hover .ai-icon-spin-hover {
+  animation-play-state: running;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-icon-spin-hover { animation: none; will-change: auto; }
+}
+
+@keyframes msg-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.msg-enter {
+  animation: msg-enter 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes dot-pulse {
+  0%, 60%, 100% { opacity: 0.25; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
+}
+.typing-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.typing-dot:nth-child(1) { animation: dot-pulse 1.4s ease-in-out infinite; }
+.typing-dot:nth-child(2) { animation: dot-pulse 1.4s ease-in-out 0.2s infinite; }
+.typing-dot:nth-child(3) { animation: dot-pulse 1.4s ease-in-out 0.4s infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-enter { animation: none; }
+  .typing-dot { animation: none; opacity: 0.5; }
+}
+
 @layer base {
   *,
   ::after,

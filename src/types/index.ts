@@ -34,11 +34,22 @@ export interface CalendarEvent {
   date: string
   startTime: string
   endTime: string
-  color: "blue" | "amber" | "green" | "purple" | "red"
+  color: string
   tags?: string[]
   status?: EventStatus
   aiContent?: AiEventContent
   isAiGenerated?: boolean
+  chatSessionId?: string
+}
+
+export interface ChatSession {
+  id: string
+  messages: ChatMessage[]
+  step: number
+  branch: string
+  isTyping: boolean
+  linkedEventIds: string[]
+  createdAt: Date
 }
 
 export type PageView = "calendar" | "chat"

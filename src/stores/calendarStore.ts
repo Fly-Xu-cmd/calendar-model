@@ -1,6 +1,7 @@
 import { create } from "zustand"
 import { format, addDays, addWeeks, subWeeks } from "date-fns"
-import type { CalendarEvent, PageView, TrustMode } from "@/types"
+import type { CalendarEvent, PageView, TrustMode, AiEventContent } from "@/types"
+import { useChatStore } from "./chatStore"
 
 interface CalendarState {
   currentDate: Date
@@ -8,11 +9,14 @@ interface CalendarState {
   pageView: PageView
   selectedEventId: string | null
   trustMode: TrustMode
+  chatOpen: boolean
   editingLinkedin: boolean
   editedLinkedinDraft: string
+  streamingEventId: string | null
 
   setCurrentDate: (date: Date) => void
   setPageView: (view: PageView) => void
+  toggleChat: () => void
   nextWeek: () => void
   prevWeek: () => void
   addEvent: (event: CalendarEvent) => void
@@ -25,17 +29,18 @@ interface CalendarState {
   setEditingLinkedin: (editing: boolean) => void
   setEditedLinkedinDraft: (draft: string) => void
   confirmWithEdit: (id: string, newDraft: string) => void
+  updateEventAiContent: (id: string, partial: Partial<AiEventContent>) => void
+  setStreamingEventId: (id: string | null) => void
+  streamAiEvents: () => void
 }
 
 const today = new Date()
 const fmt = (d: Date) => format(d, "yyyy-MM-dd")
-
 const todayStr = fmt(today)
-
 const dayOfWeek = today.getDay()
 const mondayBased = dayOfWeek === 0 ? 6 : dayOfWeek - 1
 
-const mockEvents: CalendarEvent[] = [
+const personalEvents: CalendarEvent[] = [
   {
     id: "personal-1",
     title: "带看 Worthington 房源",
@@ -55,53 +60,17 @@ const mockEvents: CalendarEvent[] = [
     tags: ["签约"],
   },
   {
-    id: "ai-today",
-    title: "哥伦布今日市场速报 — 富兰克林县 3 套新房源",
-    date: todayStr,
-    startTime: "09:00",
-    endTime: "09:30",
-    color: "amber",
-    tags: ["自动生成", "待你确认"],
-    status: "draft",
-    isAiGenerated: true,
-    aiContent: {
-      marketOverview: "富兰克林县独栋住宅市场活跃，新增 3 套房源进入目标价位区间。买家竞争加剧，平均 DOM 缩短至 18 天。",
-      medianPrice: "$287,500",
-      priceChange: "↑1.2%",
-      inventory: 342,
-      newListings: 3,
-      listings: [
-        { address: "1847 Summit St", price: "$265,000", beds: 3, baths: 2, daysOnMarket: 1 },
-        { address: "923 E Broad St", price: "$310,000", beds: 4, baths: 2.5, daysOnMarket: 1 },
-        { address: "4501 Refugee Rd", price: "$189,000", beds: 2, baths: 1, daysOnMarket: 1 },
-      ],
-      linkedinDraft:
-        "你们有没有注意到最近 Clintonville 的房子上得越来越快了？🏠 今天富兰克林县又多了三套独栋——Summit St 那套 $265k，三居室，对年轻家庭来说真的很 solid。想知道现在入手的时机对不对？来聊👇",
-      emailDrafts: [
-        {
-          id: "email-1",
-          to: "Sarah Martinez",
-          subject: "🏠 Summit St 新房源 — 符合您的需求",
-          preview: "Hi Sarah，1847 Summit St 今天刚上市，3 居室 $265k，Clintonville 学区……",
-          selected: true,
-        },
-        {
-          id: "email-2",
-          to: "David Chen",
-          subject: "刚上市：E Broad St 4居室独栋",
-          preview: "Hi David，923 E Broad St 今天上市，4 居室 2.5 卫，$310k……",
-          selected: true,
-        },
-        {
-          id: "email-3",
-          to: "Mike Johnson",
-          subject: "Refugee Rd 超值房源 $189k",
-          preview: "Hi Mike，4501 Refugee Rd 今天上市，2 居室 $189k，入门级好选择……",
-          selected: true,
-        },
-      ],
-    },
+    id: "personal-3",
+    title: "团队周会",
+    date: fmt(addDays(today, 1)),
+    startTime: "11:00",
+    endTime: "12:00",
+    color: "blue",
+    tags: ["Keller Williams"],
   },
+]
+
+export const aiEventsData: CalendarEvent[] = [
   ...(mondayBased >= 1
     ? [
         {
@@ -127,32 +96,50 @@ const mockEvents: CalendarEvent[] = [
             linkedinDraft:
               "哥伦布的朋友们，Oakland Park 那边出了套很有意思的房子 🏡 3居室 $275k，社区成熟，步行可到公园。Bryden Rd 也有套 $230k 的——首次购房者可以认真看看。市场不等人，有问题随时问我👇",
             emailDrafts: [
-              {
-                id: "email-y1",
-                to: "Lisa Wang",
-                subject: "Oakland Park Ave 新房源推荐",
-                preview: "Hi Lisa，320 Oakland Park Ave 3 居室 $275k……",
-                selected: true,
-              },
-              {
-                id: "email-y2",
-                to: "Tom Brown",
-                subject: "Bryden Rd 入门级房源",
-                preview: "Hi Tom，1560 Bryden Rd $230k，适合首次购房……",
-                selected: true,
-              },
+              { id: "email-y1", to: "Lisa Wang", subject: "Oakland Park Ave 新房源推荐", preview: "Hi Lisa，320 Oakland Park Ave 3 居室 $275k……", selected: true },
+              { id: "email-y2", to: "Tom Brown", subject: "Bryden Rd 入门级房源", preview: "Hi Tom，1560 Bryden Rd $230k，适合首次购房……", selected: true },
             ],
           },
         },
       ]
     : []),
   {
+    id: "ai-today",
+    title: "哥伦布今日市场速报 — 富兰克林县 3 套新房源",
+    date: todayStr,
+    startTime: "09:00",
+    endTime: "09:30",
+    color: "blue",
+    tags: ["自动生成", "待你确认"],
+    status: "draft",
+    isAiGenerated: true,
+    aiContent: {
+      marketOverview: "富兰克林县独栋住宅市场活跃，新增 3 套房源进入目标价位区间。买家竞争加剧，平均 DOM 缩短至 18 天。",
+      medianPrice: "$287,500",
+      priceChange: "↑1.2%",
+      inventory: 342,
+      newListings: 3,
+      listings: [
+        { address: "1847 Summit St", price: "$265,000", beds: 3, baths: 2, daysOnMarket: 1 },
+        { address: "923 E Broad St", price: "$310,000", beds: 4, baths: 2.5, daysOnMarket: 1 },
+        { address: "4501 Refugee Rd", price: "$189,000", beds: 2, baths: 1, daysOnMarket: 1 },
+      ],
+      linkedinDraft:
+        "你们有没有注意到最近 Clintonville 的房子上得越来越快了？🏠 今天富兰克林县又多了三套独栋——Summit St 那套 $265k，三居室，对年轻家庭来说真的很 solid。想知道现在入手的时机对不对？来聊👇",
+      emailDrafts: [
+        { id: "email-1", to: "Sarah Martinez", subject: "🏠 Summit St 新房源 — 符合您的需求", preview: "Hi Sarah，1847 Summit St 今天刚上市，3 居室 $265k，Clintonville 学区……", selected: true },
+        { id: "email-2", to: "David Chen", subject: "刚上市：E Broad St 4居室独栋", preview: "Hi David，923 E Broad St 今天上市，4 居室 2.5 卫，$310k……", selected: true },
+        { id: "email-3", to: "Mike Johnson", subject: "Refugee Rd 超值房源 $189k", preview: "Hi Mike，4501 Refugee Rd 今天上市，2 居室 $189k，入门级好选择……", selected: true },
+      ],
+    },
+  },
+  {
     id: "ai-tomorrow",
     title: "哥伦布今日市场 — 无新增独栋住宅",
     date: fmt(addDays(today, 1)),
     startTime: "09:00",
     endTime: "09:30",
-    color: "amber",
+    color: "blue",
     tags: ["自动生成", "待你确认"],
     status: "draft",
     isAiGenerated: true,
@@ -169,21 +156,12 @@ const mockEvents: CalendarEvent[] = [
     },
   },
   {
-    id: "personal-3",
-    title: "团队周会",
-    date: fmt(addDays(today, 1)),
-    startTime: "11:00",
-    endTime: "12:00",
-    color: "blue",
-    tags: ["Keller Williams"],
-  },
-  {
     id: "ai-day3",
     title: "哥伦布今日市场速报 — 富兰克林县 5 套新房源",
     date: fmt(addDays(today, 2)),
     startTime: "09:00",
     endTime: "09:30",
-    color: "amber",
+    color: "blue",
     tags: ["自动生成", "待你确认"],
     status: "draft",
     isAiGenerated: true,
@@ -213,17 +191,39 @@ const mockEvents: CalendarEvent[] = [
   },
 ]
 
+function streamText(
+  fullText: string,
+  onUpdate: (partial: string) => void,
+  intervalMs = 30,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let idx = 0
+    const timer = setInterval(() => {
+      const chunkSize = Math.floor(Math.random() * 3) + 1
+      idx = Math.min(idx + chunkSize, fullText.length)
+      onUpdate(fullText.slice(0, idx))
+      if (idx >= fullText.length) {
+        clearInterval(timer)
+        resolve()
+      }
+    }, intervalMs)
+  })
+}
+
 export const useCalendarStore = create<CalendarState>((set, get) => ({
   currentDate: today,
-  events: mockEvents,
+  events: personalEvents,
   pageView: "calendar",
   selectedEventId: null,
   trustMode: "confirm",
+  chatOpen: false,
   editingLinkedin: false,
   editedLinkedinDraft: "",
+  streamingEventId: null,
 
   setCurrentDate: (date) => set({ currentDate: date }),
   setPageView: (view) => set({ pageView: view }),
+  toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
   nextWeek: () => set((s) => ({ currentDate: addWeeks(s.currentDate, 1) })),
   prevWeek: () => set((s) => ({ currentDate: subWeeks(s.currentDate, 1) })),
   addEvent: (event) => set((s) => ({ events: [...s.events, event] })),
@@ -236,6 +236,152 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       selectedEventId: id,
       editingLinkedin: false,
       editedLinkedinDraft: ev?.aiContent?.linkedinDraft ?? "",
+      chatOpen: ev?.isAiGenerated ? true : get().chatOpen,
+    })
+    if (ev?.isAiGenerated && ev.chatSessionId) {
+      useChatStore.getState().switchSession(ev.chatSessionId)
+    }
+  },
+
+  updateEventAiContent: (id, partial) =>
+    set((s) => ({
+      events: s.events.map((e) =>
+        e.id === id && e.aiContent
+          ? { ...e, aiContent: { ...e.aiContent, ...partial } }
+          : e,
+      ),
+    })),
+
+  setStreamingEventId: (id) => set({ streamingEventId: id }),
+
+  streamAiEvents: () => {
+    const events = aiEventsData
+    const chatSessionId = useChatStore.getState().activeSessionId
+    let delay = 0
+
+    events.forEach((fullEvent, idx) => {
+      const d = delay
+
+      setTimeout(() => {
+        const shell: CalendarEvent = {
+          ...fullEvent,
+          chatSessionId: chatSessionId ?? undefined,
+          aiContent: fullEvent.aiContent
+            ? {
+                marketOverview: "",
+                medianPrice: "",
+                priceChange: "",
+                inventory: 0,
+                newListings: 0,
+                listings: [],
+                linkedinDraft: "",
+                emailDrafts: [],
+              }
+            : undefined,
+        }
+
+        set((s) => ({
+          events: [...s.events, shell],
+          selectedEventId: fullEvent.id,
+          streamingEventId: fullEvent.id,
+          editingLinkedin: false,
+          editedLinkedinDraft: "",
+        }))
+
+        if (fullEvent.aiContent) {
+          const ai = fullEvent.aiContent
+
+          const streamSteps = async () => {
+            await streamText(ai.marketOverview, (t) =>
+              get().events.find(e => e.id === fullEvent.id) &&
+              set((s) => ({
+                events: s.events.map((e) =>
+                  e.id === fullEvent.id
+                    ? { ...e, aiContent: { ...e.aiContent!, marketOverview: t } }
+                    : e,
+                ),
+              })),
+            )
+
+            set((s) => ({
+              events: s.events.map((e) =>
+                e.id === fullEvent.id
+                  ? {
+                      ...e,
+                      aiContent: {
+                        ...e.aiContent!,
+                        medianPrice: ai.medianPrice,
+                        priceChange: ai.priceChange,
+                        inventory: ai.inventory,
+                        newListings: ai.newListings,
+                      },
+                    }
+                  : e,
+              ),
+            }))
+
+            await new Promise((r) => setTimeout(r, 200))
+
+            for (const listing of ai.listings) {
+              set((s) => ({
+                events: s.events.map((e) =>
+                  e.id === fullEvent.id
+                    ? {
+                        ...e,
+                        aiContent: {
+                          ...e.aiContent!,
+                          listings: [...e.aiContent!.listings, listing],
+                        },
+                      }
+                    : e,
+                ),
+              }))
+              await new Promise((r) => setTimeout(r, 150))
+            }
+
+            await streamText(ai.linkedinDraft, (t) =>
+              get().events.find(e => e.id === fullEvent.id) &&
+              set((s) => ({
+                events: s.events.map((e) =>
+                  e.id === fullEvent.id
+                    ? { ...e, aiContent: { ...e.aiContent!, linkedinDraft: t } }
+                    : e,
+                ),
+              })),
+            )
+
+            for (const email of ai.emailDrafts) {
+              set((s) => ({
+                events: s.events.map((e) =>
+                  e.id === fullEvent.id
+                    ? {
+                        ...e,
+                        aiContent: {
+                          ...e.aiContent!,
+                          emailDrafts: [...e.aiContent!.emailDrafts, email],
+                        },
+                      }
+                    : e,
+                ),
+              }))
+              await new Promise((r) => setTimeout(r, 100))
+            }
+
+            if (idx === events.length - 1) {
+              set({ streamingEventId: null })
+            }
+
+            set((s) => ({
+              editedLinkedinDraft:
+                s.selectedEventId === fullEvent.id ? ai.linkedinDraft : s.editedLinkedinDraft,
+            }))
+          }
+
+          streamSteps()
+        }
+      }, d)
+
+      delay += 2500
     })
   },
 
