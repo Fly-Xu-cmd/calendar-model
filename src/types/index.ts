@@ -18,6 +18,7 @@ export interface SubProcess {
   title: string
   status: "running" | "done" | "error"
   detail?: string
+  children?: SubProcess[]
 }
 
 export interface ChatMessage {
@@ -27,6 +28,7 @@ export interface ChatMessage {
   timestamp: Date
   subProcesses?: SubProcess[]
   actions?: ChatAction[]
+  icon?: "build" | "task" | "info"
 }
 
 export interface ChatAction {
