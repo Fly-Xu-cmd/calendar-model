@@ -1,55 +1,51 @@
-import { PanelRight } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Sidebar } from "@/components/layout/Sidebar"
-import { RightPanel } from "@/components/layout/RightPanel"
-import { WeekView } from "@/components/calendar/WeekView"
-import { DayView } from "@/components/calendar/DayView"
-import { TaskView } from "@/components/tasks/TaskView"
-import { FloatingAgent } from "@/components/agent/FloatingAgent"
+import { Calendar, MessageSquare } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useCalendarStore } from "@/stores/calendarStore"
+import { CalendarView } from "@/components/calendar/CalendarView"
+import { ChatView } from "@/components/chat/ChatView"
+import type { PageView } from "@/types"
+
+const tabs: { id: PageView; label: string; icon: typeof Calendar }[] = [
+  { id: "calendar", label: "日历", icon: Calendar },
+  { id: "chat", label: "AI 助手", icon: MessageSquare },
+]
 
 function App() {
-  const activeNav = useCalendarStore((s) => s.activeNav)
-  const viewMode = useCalendarStore((s) => s.viewMode)
-  const rightPanelOpen = useCalendarStore((s) => s.rightPanelOpen)
-  const toggleRightPanel = useCalendarStore((s) => s.toggleRightPanel)
+  const pageView = useCalendarStore((s) => s.pageView)
+  const setPageView = useCalendarStore((s) => s.setPageView)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <Sidebar />
-
-      <main className="flex flex-1 flex-col overflow-hidden">
-        {activeNav === "calendar" && (
-          <>
-            <div className="flex items-center justify-end border-b border-border px-4 py-2">
-              {!rightPanelOpen && (
-                <Button variant="ghost" size="icon-sm" onClick={toggleRightPanel}>
-                  <PanelRight className="size-4" />
-                </Button>
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      {/* top nav */}
+      <header className="flex items-center justify-between border-b border-border px-6 py-2.5">
+        <h1 className="text-sm font-bold text-foreground tracking-tight">
+          📅 Calendar AI
+        </h1>
+        <nav className="flex gap-1 rounded-full border border-border bg-muted/50 p-0.5">
+          {tabs.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setPageView(id)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition-all",
+                pageView === id
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
-            </div>
-            {viewMode === "week" && <WeekView />}
-            {viewMode === "day" && <DayView />}
-            {viewMode === "month" && (
-              <div className="flex flex-1 items-center justify-center text-muted-foreground">
-                <p className="text-sm">月视图（开发中）</p>
-              </div>
-            )}
-          </>
-        )}
+            >
+              <Icon className="size-3.5" />
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="w-20" />
+      </header>
 
-        {activeNav === "tasks" && <TaskView />}
-
-        {activeNav === "settings" && (
-          <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            <p className="text-sm">偏好设置页面（开发中）</p>
-          </div>
-        )}
+      {/* page content */}
+      <main className="flex-1 overflow-hidden">
+        {pageView === "calendar" && <CalendarView />}
+        {pageView === "chat" && <ChatView />}
       </main>
-
-      {activeNav === "calendar" && <RightPanel />}
-
-      <FloatingAgent />
     </div>
   )
 }
