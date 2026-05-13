@@ -4,7 +4,6 @@ import {
   startOfWeek,
   setHours,
   setMinutes,
-  addHours,
 } from "date-fns"
 import type {
   CalendarEvent,

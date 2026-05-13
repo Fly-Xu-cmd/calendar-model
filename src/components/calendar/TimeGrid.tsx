@@ -10,7 +10,6 @@ import {
   addMinutes,
 } from "date-fns"
 import { cn } from "@/lib/utils"
-import { useCalendarStore } from "@/stores/calendarStore"
 import type { CalendarEvent } from "@/types"
 import { EventBlock } from "./EventBlock"
 import { CreateEventDialog } from "./CreateEventDialog"

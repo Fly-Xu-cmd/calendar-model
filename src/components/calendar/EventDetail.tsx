@@ -38,7 +38,6 @@ export function EventDetail({ event }: EventDetailProps) {
 
   const [editing, setEditing] = useState(false)
   const [editDraft, setEditDraft] = useState(event.linkedinDraft ?? "")
-  const [showEmails, setShowEmails] = useState(false)
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null)
   const [editingEmail, setEditingEmail] = useState<string | null>(null)
   const [emailEditBody, setEmailEditBody] = useState("")
