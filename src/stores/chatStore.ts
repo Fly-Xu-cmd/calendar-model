@@ -5,6 +5,7 @@ import { useCalendarStore } from "./calendarStore"
 type ChatBranch = "main" | "adjust-style" | "adjust-range" | "adjust-direction"
 
 export const STEP_METAS: StepMeta[] = [
+  { icon: "⏰", title: "执行时间" },
   { icon: "🏠", title: "房产类型" },
   { icon: "💰", title: "价格范围" },
   { icon: "📝", title: "风格参考" },
@@ -33,7 +34,7 @@ interface ChatState {
 }
 
 function detectBranch(content: string, currentStep: number): ChatBranch | null {
-  if (currentStep < 4) return null
+  if (currentStep < 5) return null
   const lower = content.toLowerCase()
   if (lower.includes("风格") || lower.includes("太书面") || lower.includes("不像我") || lower.includes("语气"))
     return "adjust-style"
@@ -100,7 +101,23 @@ function createReply(step: number, branch: ChatBranch): ChatMessage[] {
           id: `r-${Date.now()}-0`,
           role: "assistant",
           content:
-            "收到。关于富兰克林县的新房源监控，我需要确认几个细节：\n\n**你关注哪类房产？**",
+            "收到。关于富兰克林县的新房源监控，我先确认一下——\n\n**你希望什么时间执行？**",
+          timestamp: new Date(),
+          actions: [
+            { id: "a-time-daily9", label: "每天早上 9:00", variant: "primary" },
+            { id: "a-time-daily8", label: "每天早上 8:00", variant: "secondary" },
+            { id: "a-time-weekly", label: "每周一早上 9:00", variant: "secondary" },
+          ],
+        },
+      ]
+
+    case 1:
+      return [
+        {
+          id: `r-${Date.now()}-1`,
+          role: "assistant",
+          content:
+            "好的，已安排执行时间。接下来——\n\n**你关注哪类房产？**",
           timestamp: new Date(),
           actions: [
             { id: "a-sfh", label: "独栋住宅", variant: "primary" },
@@ -110,10 +127,10 @@ function createReply(step: number, branch: ChatBranch): ChatMessage[] {
         },
       ]
 
-    case 1:
+    case 2:
       return [
         {
-          id: `r-${Date.now()}-1a`,
+          id: `r-${Date.now()}-2a`,
           role: "assistant",
           content: "好的，独栋住宅。\n\n**价格范围有偏好吗？**",
           timestamp: new Date(),
@@ -126,25 +143,22 @@ function createReply(step: number, branch: ChatBranch): ChatMessage[] {
         },
       ]
 
-    case 2:
-      return [
-        {
-          id: `r-${Date.now()}-2`,
-          role: "assistant",
-          content:
-            "好的，独栋住宅，$200k-$400k。接下来关于你的 LinkedIn 发帖风格——\n\n**请把你写过的帖子发给我。** 你可以：",
-          timestamp: new Date(),
-          actions: [
-            { id: "a-paste", label: "粘贴帖子文字", variant: "primary" },
-            { id: "a-link", label: "发送 LinkedIn 帖子链接", variant: "secondary" },
-          ],
-        },
-      ]
-
     case 3:
       return [
         {
           id: `r-${Date.now()}-3`,
+          role: "assistant",
+          content:
+            "好的，独栋住宅，$200k-$400k。接下来关于你的 LinkedIn 发帖风格——\n\n**请粘贴你写过的帖子文字或链接**，我来分析你的风格。",
+          timestamp: new Date(),
+          inputPlaceholder: "粘贴 LinkedIn 帖子链接或文字…",
+        },
+      ]
+
+    case 4:
+      return [
+        {
+          id: `r-${Date.now()}-4`,
           role: "assistant",
           content:
             '我分析了你的帖子。你的风格是：**开头用一个反问句或数据引入，中间给出本地市场分析，结尾附行动号召，语气是专业但亲和的——像朋友间聊天但你是那个懂行的朋友。**\n\n以下是我将为你做的事：\n\n**每天早上 9 点自动执行：**\n1. 抓取富兰克林县当日新上市的独栋住宅（$200k-$400k）\n2. 汇总哥伦布市整体市场数据（中位价、库存、趋势）\n3. 用你的风格生成一篇 LinkedIn 帖子草稿\n4. 为每套新房源生成一封个性化推广邮件草稿\n5. 将以上内容推送到你的日历作为 9:00 AM 日程事件，**等你确认后再发布**',
@@ -156,10 +170,10 @@ function createReply(step: number, branch: ChatBranch): ChatMessage[] {
         },
       ]
 
-    case 4:
+    case 5:
       return [
         {
-          id: `r-${Date.now()}-4a`,
+          id: `r-${Date.now()}-5a`,
           role: "assistant",
           content: "开始构建 LinkedIn Listing Posts Agent",
           timestamp: new Date(),
@@ -286,10 +300,16 @@ function scheduleReply(
     delay += humanDelay(msg.subProcesses ? 1400 : 700)
   })
 
-  if (step === 4) {
+  if (step === 1) {
     setTimeout(() => {
-      useCalendarStore.getState().streamAiEvents()
-    }, 800)
+      useCalendarStore.getState().createPlaceholderEvents()
+    }, 200)
+  }
+
+  if (step === 5) {
+    setTimeout(() => {
+      useCalendarStore.getState().fillEventContent()
+    }, 200)
   }
 
   setTimeout(() => {

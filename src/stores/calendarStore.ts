@@ -8,6 +8,7 @@ interface CalendarState {
   events: CalendarEvent[]
   pageView: PageView
   selectedEventId: string | null
+  floatingEventId: string | null
   trustMode: TrustMode
   editingLinkedin: boolean
   editedLinkedinDraft: string
@@ -20,6 +21,8 @@ interface CalendarState {
   addEvent: (event: CalendarEvent) => void
   removeEvent: (id: string) => void
   selectEvent: (id: string | null) => void
+  openFloating: (id: string) => void
+  closeFloating: () => void
   confirmEvent: (id: string) => void
   skipEvent: (id: string) => void
   setTrustMode: (mode: TrustMode) => void
@@ -29,6 +32,8 @@ interface CalendarState {
   confirmWithEdit: (id: string, newDraft: string) => void
   updateEventAiContent: (id: string, partial: Partial<AiEventContent>) => void
   setStreamingEventId: (id: string | null) => void
+  createPlaceholderEvents: () => void
+  fillEventContent: () => void
   streamAiEvents: () => void
 }
 
@@ -213,6 +218,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   events: personalEvents,
   pageView: "calendar",
   selectedEventId: null,
+  floatingEventId: null,
   trustMode: "confirm",
   editingLinkedin: false,
   editedLinkedinDraft: "",
@@ -238,6 +244,26 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     }
   },
 
+  openFloating: (id) => {
+    const ev = get().events.find((e) => e.id === id)
+    set({ floatingEventId: id, selectedEventId: id })
+    if (ev?.chatSessionId) {
+      useChatStore.getState().switchSession(ev.chatSessionId)
+    } else if (ev?.isAiGenerated) {
+      const sessionId = useChatStore.getState().createSession()
+      set((s) => ({
+        events: s.events.map((e) =>
+          e.id === id ? { ...e, chatSessionId: sessionId } : e,
+        ),
+      }))
+    }
+  },
+
+  closeFloating: () => {
+    set({ floatingEventId: null })
+    useChatStore.getState().resetChat()
+  },
+
   updateEventAiContent: (id, partial) =>
     set((s) => ({
       events: s.events.map((e) =>
@@ -249,38 +275,116 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   setStreamingEventId: (id) => set({ streamingEventId: id }),
 
+  createPlaceholderEvents: () => {
+    const chatSessionId = useChatStore.getState().activeSessionId
+    const placeholders: CalendarEvent[] = aiEventsData.map((ev) => ({
+      id: ev.id,
+      title: ev.date,
+      date: ev.date,
+      startTime: ev.startTime,
+      endTime: ev.endTime,
+      color: "blue",
+      status: "loading" as const,
+      isAiGenerated: true,
+      chatSessionId: chatSessionId ?? undefined,
+      tags: ["正在准备…"],
+    }))
+    set((s) => ({ events: [...s.events, ...placeholders] }))
+  },
+
+  fillEventContent: () => {
+    let delay = 200
+    aiEventsData.forEach((fullEvent, idx) => {
+      const d = delay
+      setTimeout(() => {
+        set((s) => ({
+          streamingEventId: fullEvent.id,
+          selectedEventId: fullEvent.id,
+          events: s.events.map((e) =>
+            e.id === fullEvent.id
+              ? {
+                  ...e,
+                  title: fullEvent.title,
+                  tags: fullEvent.tags,
+                  aiContent: fullEvent.aiContent
+                    ? { marketOverview: "", medianPrice: "", priceChange: "", inventory: 0, newListings: 0, listings: [], linkedinDraft: "", emailDrafts: [] }
+                    : undefined,
+                }
+              : e,
+          ),
+        }))
+
+        if (fullEvent.aiContent) {
+          const ai = fullEvent.aiContent
+          const streamSteps = async () => {
+            await streamText(ai.marketOverview, (t) =>
+              get().events.find(e => e.id === fullEvent.id) &&
+              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, marketOverview: t } } : e) })),
+            )
+            set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, medianPrice: ai.medianPrice, priceChange: ai.priceChange, inventory: ai.inventory, newListings: ai.newListings } } : e) }))
+            await new Promise((r) => setTimeout(r, 200))
+            for (const listing of ai.listings) {
+              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, listings: [...e.aiContent!.listings, listing] } } : e) }))
+              await new Promise((r) => setTimeout(r, 150))
+            }
+            await streamText(ai.linkedinDraft, (t) =>
+              get().events.find(e => e.id === fullEvent.id) &&
+              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, linkedinDraft: t } } : e) })),
+            )
+            for (const email of ai.emailDrafts) {
+              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, emailDrafts: [...e.aiContent!.emailDrafts, email] } } : e) }))
+              await new Promise((r) => setTimeout(r, 100))
+            }
+            set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, status: fullEvent.status ?? ("draft" as const), tags: fullEvent.tags } : e) }))
+            if (idx === aiEventsData.length - 1) set({ streamingEventId: null })
+            set((s) => ({ editedLinkedinDraft: s.selectedEventId === fullEvent.id ? ai.linkedinDraft : s.editedLinkedinDraft }))
+          }
+          streamSteps()
+        }
+      }, d)
+      delay += 800
+    })
+  },
+
   streamAiEvents: () => {
     const events = aiEventsData
     const chatSessionId = useChatStore.getState().activeSessionId
-    let delay = 0
+
+    const placeholders: CalendarEvent[] = events.map((fullEvent) => ({
+      ...fullEvent,
+      chatSessionId: chatSessionId ?? undefined,
+      status: "loading" as const,
+      tags: ["正在准备…"],
+      aiContent: fullEvent.aiContent
+        ? {
+            marketOverview: "",
+            medianPrice: "",
+            priceChange: "",
+            inventory: 0,
+            newListings: 0,
+            listings: [],
+            linkedinDraft: "",
+            emailDrafts: [],
+          }
+        : undefined,
+    }))
+
+    set((s) => ({
+      events: [...s.events, ...placeholders],
+      selectedEventId: events[0]?.id ?? null,
+      editingLinkedin: false,
+      editedLinkedinDraft: "",
+    }))
+
+    let delay = 300
 
     events.forEach((fullEvent, idx) => {
       const d = delay
 
       setTimeout(() => {
-        const shell: CalendarEvent = {
-          ...fullEvent,
-          chatSessionId: chatSessionId ?? undefined,
-          aiContent: fullEvent.aiContent
-            ? {
-                marketOverview: "",
-                medianPrice: "",
-                priceChange: "",
-                inventory: 0,
-                newListings: 0,
-                listings: [],
-                linkedinDraft: "",
-                emailDrafts: [],
-              }
-            : undefined,
-        }
-
         set((s) => ({
-          events: [...s.events, shell],
-          selectedEventId: fullEvent.id,
           streamingEventId: fullEvent.id,
-          editingLinkedin: false,
-          editedLinkedinDraft: "",
+          selectedEventId: fullEvent.id,
         }))
 
         if (fullEvent.aiContent) {
@@ -362,6 +466,14 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
               await new Promise((r) => setTimeout(r, 100))
             }
 
+            set((s) => ({
+              events: s.events.map((e) =>
+                e.id === fullEvent.id
+                  ? { ...e, status: fullEvent.status ?? ("draft" as const), tags: fullEvent.tags }
+                  : e,
+              ),
+            }))
+
             if (idx === events.length - 1) {
               set({ streamingEventId: null })
             }
@@ -376,7 +488,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         }
       }, d)
 
-      delay += 2500
+      delay += 800
     })
   },
 

@@ -10,7 +10,6 @@ import {
   ClipboardList,
   X,
   CornerDownLeft,
-  Pencil,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -244,10 +243,7 @@ function InputArea({
   onSelectAction: (label: string) => void
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const otherRef = useRef<HTMLInputElement>(null)
   const [activeIdx, setActiveIdx] = useState(0)
-  const [showOther, setShowOther] = useState(false)
-  const [otherValue, setOtherValue] = useState("")
 
   useEffect(() => {
     if (!pendingActions && textareaRef.current) {
@@ -258,8 +254,6 @@ function InputArea({
   useEffect(() => {
     if (pendingActions) {
       setActiveIdx(0)
-      setShowOther(false)
-      setOtherValue("")
     }
   }, [pendingActions])
 
@@ -296,16 +290,15 @@ function InputArea({
     [pendingActions, activeIdx, onSelectAction, dismissActions],
   )
 
-  if (pendingActions) {
-    return (
-      <div
-        className="border-t border-slate-200/60 bg-[#faf8f5]"
-        tabIndex={0}
-        onKeyDown={handleActionsKeyDown}
-        ref={(el) => el?.focus()}
-      >
-        <div>
-          {/* header */}
+  return (
+    <div className="border-t border-slate-200/60 bg-[#faf8f5]">
+      {/* option buttons (shown above input when AI asks) */}
+      {pendingActions && (
+        <div
+          tabIndex={0}
+          onKeyDown={handleActionsKeyDown}
+          ref={(el) => el?.focus()}
+        >
           <div className="flex items-center justify-between px-4 pt-3 pb-2">
             <span className="text-[15px] font-semibold text-slate-700">您想怎么做？</span>
             <button
@@ -316,8 +309,7 @@ function InputArea({
             </button>
           </div>
 
-          {/* option list */}
-          <div className="px-3 pb-1">
+          <div className="px-3 pb-2">
             {pendingActions.map((action, idx) => (
               <button
                 key={action.id}
@@ -353,43 +345,6 @@ function InputArea({
             ))}
           </div>
 
-          {/* "Other" free input */}
-          <div className="px-5 pb-3">
-            {showOther ? (
-              <div className="flex items-center gap-2">
-                <Pencil className="size-3.5 text-slate-300 shrink-0" />
-                <input
-                  ref={otherRef}
-                  value={otherValue}
-                  onChange={(e) => setOtherValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && otherValue.trim()) {
-                      e.preventDefault()
-                      onSelectAction(otherValue.trim())
-                    } else if (e.key === "Escape") {
-                      setShowOther(false)
-                    }
-                  }}
-                  autoFocus
-                  placeholder="请告诉我您的想法…"
-                  className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none"
-                />
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  setShowOther(true)
-                  setTimeout(() => otherRef.current?.focus(), 50)
-                }}
-                className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <Pencil className="size-3.5" />
-                <span>Other</span>
-              </button>
-            )}
-          </div>
-
-          {/* footer hints */}
           <div className="flex items-center justify-between border-t border-slate-100 px-5 py-2">
             <span className="text-[11px] text-slate-300">
               ↑ ↓ to navigate · Enter to select · Esc to skip
@@ -402,13 +357,10 @@ function InputArea({
             </button>
           </div>
         </div>
-      </div>
-    )
-  }
+      )}
 
-  return (
-    <div className="border-t border-slate-100 bg-white/80 backdrop-blur-sm px-3 py-3">
-      <div>
+      {/* text input (always visible) */}
+      <div className={cn("bg-white/80 backdrop-blur-sm px-3 py-3", pendingActions && "border-t border-slate-100")}>
         <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm focus-within:border-slate-400 focus-within:ring-1 focus-within:ring-slate-200 transition-all">
           <textarea
             ref={textareaRef}

@@ -25,7 +25,7 @@ export interface AiEventContent {
   emailDrafts: EmailDraft[]
 }
 
-export type EventStatus = "draft" | "confirmed" | "auto-published" | "skipped"
+export type EventStatus = "loading" | "draft" | "confirmed" | "auto-published" | "skipped"
 
 export interface CalendarEvent {
   id: string
@@ -81,6 +81,7 @@ export interface ChatMessage {
   actions?: ChatAction[]
   icon?: "build" | "task" | "info"
   stepIndex?: number
+  inputPlaceholder?: string
 }
 
 export interface StepMeta {

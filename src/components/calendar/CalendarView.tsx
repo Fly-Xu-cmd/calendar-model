@@ -9,15 +9,31 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useCalendarStore } from "@/stores/calendarStore"
-import { EventDetailPanel } from "@/components/calendar/EventDetailPanel"
 import { SkillHashGlyph } from "@/components/calendar/SkillHashGlyph"
 import type { CalendarEvent } from "@/types"
 
 const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+function LoadingEventCard({ event }: { event: CalendarEvent }) {
+  return (
+    <div className="group flex w-full items-center p-3 rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/50 to-white/50 ai-event-streaming">
+      <div className="me-3 shrink-0">
+        <div className="flex size-9 items-center justify-center rounded-full bg-blue-100/80">
+          <Loader2 className="size-4 animate-spin text-blue-400" />
+        </div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="h-3 w-3/4 rounded bg-slate-200/60 animate-pulse mb-1.5" />
+        <p className="text-sm text-blue-400 font-medium">正在准备…</p>
+      </div>
+    </div>
+  )
+}
 
 function AiEventCard({
   event,
@@ -71,11 +87,11 @@ function AiEventCard({
       </div>
 
       <div className="min-w-0 flex-1 relative z-[1]">
-        <p className="text-[12px] font-medium leading-snug text-[#0d0d0d]" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        <p className="text-[15px] font-medium leading-snug text-[#0d0d0d]" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
           {event.title}
         </p>
         <p className={cn(
-          "truncate text-[11px] font-normal leading-4 mt-0.5",
+          "truncate text-sm font-normal leading-4 mt-0.5",
           isStreaming ? "text-blue-500" : "text-[#8f8f8f]",
         )}>
           {event.startTime} · {statusText}
@@ -95,10 +111,10 @@ function AiEventCard({
 function RegularEventCard({ event }: { event: CalendarEvent }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 space-y-1">
-      <p className="text-[12px] font-medium text-slate-700 leading-snug">
+      <p className="text-[15px] font-medium text-slate-700 leading-snug">
         {event.title}
       </p>
-      <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+      <div className="flex items-center gap-1.5 text-sm text-slate-400">
         <Clock className="size-3" />
         <span>{event.startTime} - {event.endTime}</span>
         {event.tags && event.tags.length > 0 && (
@@ -113,7 +129,7 @@ function RegularEventCard({ event }: { event: CalendarEvent }) {
 }
 
 export function CalendarView() {
-  const { currentDate, events, nextWeek, prevWeek, selectedEventId, selectEvent, streamingEventId } =
+  const { currentDate, events, nextWeek, prevWeek, floatingEventId, openFloating, streamingEventId } =
     useCalendarStore()
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
@@ -125,8 +141,6 @@ export function CalendarView() {
     ? `${format(weekStart, "yyyy年M月d日")} - ${format(weekEnd, "d日")}`
     : `${format(weekStart, "M月d日")} - ${format(weekEnd, "M月d日")}`
 
-  const hasSelection = selectedEventId !== null
-
   return (
     <div className="flex h-full overflow-hidden">
       <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
@@ -135,7 +149,7 @@ export function CalendarView() {
           <Button variant="ghost" size="icon-sm" onClick={prevWeek}>
             <ChevronLeft className="size-4" />
           </Button>
-          <span className="text-xs sm:text-sm font-semibold text-slate-700 min-w-0 flex-1 sm:flex-none sm:min-w-[180px] text-center truncate">
+          <span className="text-sm sm:text-sm font-semibold text-slate-700 min-w-0 flex-1 sm:flex-none sm:min-w-[180px] text-center truncate">
             {weekLabel}
           </span>
           <Button variant="ghost" size="icon-sm" onClick={nextWeek}>
@@ -163,7 +177,7 @@ export function CalendarView() {
                     isToday && "bg-blue-50/40",
                   )}
                 >
-                  <p className="text-[10px] text-slate-400 font-medium tracking-wider">
+                  <p className="text-sm text-slate-400 font-medium tracking-wider">
                     {WEEKDAY_LABELS[idx]}
                   </p>
                   <p
@@ -178,12 +192,14 @@ export function CalendarView() {
 
                 <div className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-1.5 bg-slate-50/30">
                   {dayEvents.map((event) =>
-                    event.isAiGenerated ? (
+                    event.status === "loading" ? (
+                      <LoadingEventCard key={event.id} event={event} />
+                    ) : event.isAiGenerated ? (
                       <AiEventCard
                         key={event.id}
                         event={event}
-                        onClick={() => selectEvent(event.id)}
-                        isSelected={selectedEventId === event.id}
+                        onClick={() => openFloating(event.id)}
+                        isSelected={floatingEventId === event.id}
                         isStreaming={streamingEventId === event.id}
                       />
                     ) : (
@@ -196,8 +212,6 @@ export function CalendarView() {
           })}
         </div>
       </div>
-
-      {hasSelection && <EventDetailPanel />}
     </div>
   )
 }
