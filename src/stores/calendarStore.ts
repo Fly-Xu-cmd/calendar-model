@@ -382,7 +382,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       const d = delay
 
       setTimeout(() => {
-        set((s) => ({
+        set(() => ({
           streamingEventId: fullEvent.id,
           selectedEventId: fullEvent.id,
         }))

@@ -19,7 +19,7 @@ import type { CalendarEvent } from "@/types"
 
 const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
-function LoadingEventCard({ event }: { event: CalendarEvent }) {
+function LoadingEventCard({ event: _event }: { event: CalendarEvent }) {
   return (
     <div className="group flex w-full items-center p-3 rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/50 to-white/50 ai-event-streaming">
       <div className="me-3 shrink-0">
