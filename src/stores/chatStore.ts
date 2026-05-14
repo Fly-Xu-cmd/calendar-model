@@ -1,8 +1,17 @@
 import { create } from "zustand"
-import type { ChatMessage, ChatSession } from "@/types"
+import type { ChatMessage, ChatSession, StepMeta } from "@/types"
 import { useCalendarStore } from "./calendarStore"
 
 type ChatBranch = "main" | "adjust-style" | "adjust-range" | "adjust-direction"
+
+export const STEP_METAS: StepMeta[] = [
+  { icon: "🏠", title: "房产类型" },
+  { icon: "💰", title: "价格范围" },
+  { icon: "📝", title: "风格参考" },
+  { icon: "📋", title: "计划确认" },
+  { icon: "🔨", title: "构建 Agent" },
+  { icon: "✅", title: "配置完成" },
+]
 
 interface ChatState {
   sessions: Record<string, ChatSession>
@@ -13,12 +22,14 @@ interface ChatState {
   isTyping: boolean
   step: number
   branch: ChatBranch
+  expandedStepIndex: number | null
 
   setInputValue: (v: string) => void
   sendMessage: (content: string) => void
   resetChat: () => void
   createSession: () => string
   switchSession: (id: string) => void
+  setExpandedStep: (idx: number | null) => void
 }
 
 function detectBranch(content: string, currentStep: number): ChatBranch | null {
@@ -259,7 +270,10 @@ function scheduleReply(
   set(() => ({ isTyping: true }))
 
   const { step, branch } = get()
-  const replies = createReply(step, branch as ChatBranch)
+  const replies = createReply(step, branch as ChatBranch).map((msg) => ({
+    ...msg,
+    stepIndex: step,
+  }))
 
   let delay = humanDelay(400)
 
@@ -300,8 +314,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isTyping: false,
   step: 0,
   branch: "main",
+  expandedStepIndex: null,
 
   setInputValue: (v) => set({ inputValue: v }),
+  setExpandedStep: (idx) => set({ expandedStepIndex: idx }),
 
   createSession: () => {
     saveCurrentSession(get, set)
@@ -369,11 +385,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().createSession()
     }
 
+    const currentStep = get().step
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: "user",
       content,
       timestamp: new Date(),
+      stepIndex: currentStep,
     }
     set((s) => ({
       messages: [...s.messages, userMsg],

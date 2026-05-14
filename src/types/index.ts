@@ -80,4 +80,11 @@ export interface ChatMessage {
   subProcesses?: SubProcess[]
   actions?: ChatAction[]
   icon?: "build" | "task" | "info"
+  stepIndex?: number
+}
+
+export interface StepMeta {
+  icon: string
+  title: string
+  completedSummary?: string
 }

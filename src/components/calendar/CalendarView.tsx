@@ -23,10 +23,12 @@ function AiEventCard({
   event,
   onClick,
   isSelected,
+  isStreaming,
 }: {
   event: CalendarEvent
   onClick: () => void
   isSelected: boolean
+  isStreaming: boolean
 }) {
   const isDraft = event.status === "draft"
   const isConfirmed = event.status === "confirmed"
@@ -34,7 +36,8 @@ function AiEventCard({
   const isSkipped = event.status === "skipped"
 
   let statusText = ""
-  if (isDraft) statusText = "待确认"
+  if (isStreaming) statusText = "生成中…"
+  else if (isDraft) statusText = "待确认"
   else if (isConfirmed) statusText = "已发布"
   else if (isAuto) statusText = "自动发布"
   else if (isSkipped) statusText = "已跳过"
@@ -47,30 +50,42 @@ function AiEventCard({
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick() } }}
       className={cn(
-        "group flex w-full cursor-pointer select-none items-center p-3 text-left",
-        "rounded-xl border border-slate-200 bg-white transition-[background-color,box-shadow] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]",
+        "group relative flex w-full cursor-pointer select-none items-center p-3 text-left",
+        "rounded-xl border bg-white transition-[background-color,box-shadow,border-color] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]",
         "hover:bg-slate-50 hover:shadow-sm",
         isSkipped && "opacity-50",
         isSelected && "bg-slate-100 border-slate-300 shadow-sm",
+        isStreaming
+          ? "border-blue-300 ai-event-streaming"
+          : "border-slate-200",
       )}
     >
-      {/* icon */}
-      <div className="me-3 shrink-0">
+      {isStreaming && (
+        <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none">
+          <div className="ai-shimmer absolute inset-0" />
+        </div>
+      )}
+
+      <div className="me-3 shrink-0 relative z-[1]">
         <SkillHashGlyph seedText={event.id} size={36} />
       </div>
 
-      {/* text */}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 relative z-[1]">
         <p className="text-[12px] font-medium leading-snug text-[#0d0d0d]" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
           {event.title}
         </p>
-        <p className="truncate text-[11px] font-normal leading-4 text-[#8f8f8f] mt-0.5">
+        <p className={cn(
+          "truncate text-[11px] font-normal leading-4 mt-0.5",
+          isStreaming ? "text-blue-500" : "text-[#8f8f8f]",
+        )}>
           {event.startTime} · {statusText}
         </p>
       </div>
 
-      {/* trailing */}
-      <div className="shrink-0 text-[#8f8f8f] group-hover:text-[#0d0d0d] transition-colors duration-200">
+      <div className={cn(
+        "shrink-0 transition-colors duration-200 relative z-[1]",
+        isStreaming ? "text-blue-400" : "text-[#8f8f8f] group-hover:text-[#0d0d0d]",
+      )}>
         <ChevronRight className="size-4" strokeWidth={2} />
       </div>
     </div>
@@ -98,7 +113,7 @@ function RegularEventCard({ event }: { event: CalendarEvent }) {
 }
 
 export function CalendarView() {
-  const { currentDate, events, nextWeek, prevWeek, selectedEventId, selectEvent } =
+  const { currentDate, events, nextWeek, prevWeek, selectedEventId, selectEvent, streamingEventId } =
     useCalendarStore()
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
@@ -169,6 +184,7 @@ export function CalendarView() {
                         event={event}
                         onClick={() => selectEvent(event.id)}
                         isSelected={selectedEventId === event.id}
+                        isStreaming={streamingEventId === event.id}
                       />
                     ) : (
                       <RegularEventCard key={event.id} event={event} />

@@ -9,14 +9,12 @@ interface CalendarState {
   pageView: PageView
   selectedEventId: string | null
   trustMode: TrustMode
-  chatOpen: boolean
   editingLinkedin: boolean
   editedLinkedinDraft: string
   streamingEventId: string | null
 
   setCurrentDate: (date: Date) => void
   setPageView: (view: PageView) => void
-  toggleChat: () => void
   nextWeek: () => void
   prevWeek: () => void
   addEvent: (event: CalendarEvent) => void
@@ -216,14 +214,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   pageView: "calendar",
   selectedEventId: null,
   trustMode: "confirm",
-  chatOpen: false,
   editingLinkedin: false,
   editedLinkedinDraft: "",
   streamingEventId: null,
 
   setCurrentDate: (date) => set({ currentDate: date }),
   setPageView: (view) => set({ pageView: view }),
-  toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
   nextWeek: () => set((s) => ({ currentDate: addWeeks(s.currentDate, 1) })),
   prevWeek: () => set((s) => ({ currentDate: subWeeks(s.currentDate, 1) })),
   addEvent: (event) => set((s) => ({ events: [...s.events, event] })),
@@ -236,7 +232,6 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       selectedEventId: id,
       editingLinkedin: false,
       editedLinkedinDraft: ev?.aiContent?.linkedinDraft ?? "",
-      chatOpen: ev?.isAiGenerated ? true : get().chatOpen,
     })
     if (ev?.isAiGenerated && ev.chatSessionId) {
       useChatStore.getState().switchSession(ev.chatSessionId)
