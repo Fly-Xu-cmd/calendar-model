@@ -27,6 +27,32 @@ export interface AiEventContent {
 
 export type EventStatus = "loading" | "draft" | "confirmed" | "auto-published" | "skipped"
 
+export type BuildPhaseStatus = "pending" | "running" | "auth-required" | "done" | "error" | "paused"
+
+export interface BuildPhase {
+  id: string
+  title: string
+  status: BuildPhaseStatus
+  detail?: string
+  children?: BuildPhase[]
+  authType?: "oauth" | "domain"
+  authLabel?: string
+}
+
+export interface EventPlan {
+  schedule: string
+  steps: string[]
+  filters: Record<string, string>
+}
+
+export interface AgentInfo {
+  id: string
+  name: string
+  seedText: string
+  description: string
+  isActive?: boolean
+}
+
 export interface CalendarEvent {
   id: string
   title: string
@@ -40,6 +66,8 @@ export interface CalendarEvent {
   aiContent?: AiEventContent
   isAiGenerated?: boolean
   chatSessionId?: string
+  plan?: EventPlan
+  buildPhases?: BuildPhase[]
 }
 
 export interface ChatSession {
@@ -50,13 +78,16 @@ export interface ChatSession {
   isTyping: boolean
   linkedEventIds: string[]
   createdAt: Date
+  focusedBuildEventId?: string | null
+  expandedStepIndex?: number | null
+  title?: string
 }
 
 export type PageView = "calendar" | "chat"
 
 export type TrustMode = "confirm" | "auto"
 
-export type ChatRole = "user" | "assistant"
+export type ChatRole = "user" | "assistant" | "barrage"
 
 export interface SubProcess {
   id: string
@@ -79,9 +110,12 @@ export interface ChatMessage {
   timestamp: Date
   subProcesses?: SubProcess[]
   actions?: ChatAction[]
-  icon?: "build" | "task" | "info"
+  icon?: "build" | "task" | "info" | "auth" | "domain"
   stepIndex?: number
   inputPlaceholder?: string
+  agentId?: string
+  buildPhases?: BuildPhase[]
+  isPaused?: boolean
 }
 
 export interface StepMeta {
