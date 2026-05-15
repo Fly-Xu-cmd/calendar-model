@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
-import { isSameDay } from "date-fns"
 import {
   ArrowUp,
   Loader2,
@@ -25,7 +24,7 @@ import { useCalendarStore } from "@/stores/calendarStore"
 import { SkillHashGlyph } from "@/components/calendar/SkillHashGlyph"
 import { EventFloatingPanel } from "@/components/calendar/EventFloatingPanel"
 import type { ChatAction, ChatMessage, BuildPhase } from "@/types"
-import type { PendingAuth, ActiveBuild } from "@/stores/chatStore"
+import type { PendingAuth } from "@/stores/chatStore"
 
 const AGENT_LIST = [
   { id: "ai-assistant", name: "助理", seedText: "ai-assistant", label: "随时吩咐" },
@@ -641,44 +640,6 @@ function InputCard({
       <div className="border-t border-slate-100 px-4 py-1.5">
         <span className="text-[10px] text-slate-300">Enter 发送</span>
       </div>
-    </div>
-  )
-}
-
-function PendingConfirmationBanner() {
-  const events = useCalendarStore((s) => s.events)
-  const openFloating = useCalendarStore((s) => s.openFloating)
-  const floatingEventIds = useCalendarStore((s) => s.floatingEventIds)
-  const streamingEventId = useCalendarStore((s) => s.streamingEventId)
-
-  const draftEvents = useMemo(() => {
-    const today = new Date()
-    return events.filter((e) => {
-      if (!e.isAiGenerated || e.status !== "draft" || !e.aiContent?.marketOverview) return false
-      const eventDate = new Date(e.date)
-      return isSameDay(eventDate, today) || eventDate < today
-    })
-  }, [events])
-
-  if (draftEvents.length === 0 || floatingEventIds.length > 0 || streamingEventId) return null
-
-  const firstDraft = draftEvents[0]
-
-  return (
-    <div className="mb-2 flex justify-center">
-      <button
-        onClick={() => openFloating(firstDraft.id)}
-        className="card-enter inline-flex items-center gap-2 rounded-full bg-white border border-blue-200 px-4 py-2 shadow-sm hover:shadow-md hover:border-blue-300 transition-all group"
-      >
-        <span className="relative flex size-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-          <span className="relative inline-flex rounded-full size-2 bg-blue-500" />
-        </span>
-        <span className="text-[12px] text-slate-600 group-hover:text-slate-800">
-          {draftEvents.length} 条内容待确认
-        </span>
-        <ChevronRight className="size-3 text-slate-400 group-hover:text-slate-600" />
-      </button>
     </div>
   )
 }

@@ -192,11 +192,71 @@
   animation: card-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* barrage message animation */
+@keyframes barrage-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.barrage-msg {
+  animation: barrage-slide-in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.barrage-container {
+  scrollbar-width: none;
+}
+.barrage-container::-webkit-scrollbar {
+  display: none;
+}
+
+.mask-fade-top {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
+}
+
+/* today column highlight */
+.today-column-highlight {
+  background: rgba(59, 130, 246, 0.015);
+}
+
+/* stacked card effect */
+.stacked-cards {
+  position: relative;
+}
+.stacked-card-item {
+  position: relative;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stacked-card-offset {
+  margin-top: -4px;
+}
+.stacked-cards:hover .stacked-card-item {
+  transform: translateY(calc(var(--stack-index, 0) * -2px));
+}
+.stacked-card-item:hover {
+  z-index: 10;
+  transform: translateY(-2px) !important;
+}
+
+/* scrollbar hide utility */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .msg-enter { animation: none; }
   .typing-dot { animation: none; opacity: 0.5; }
   .card-enter { animation: none; }
   .ai-shimmer { animation: none; }
+  .barrage-msg { animation: none; }
 }
 
 @layer base {
