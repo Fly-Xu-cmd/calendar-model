@@ -41,7 +41,6 @@ interface CalendarState {
 const today = new Date()
 const fmt = (d: Date) => format(d, "yyyy-MM-dd")
 const todayStr = fmt(today)
-const currentTime = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`
 const dayOfWeek = today.getDay()
 const mondayBased = dayOfWeek === 0 ? 6 : dayOfWeek - 1
 

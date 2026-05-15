@@ -465,15 +465,6 @@ function progressBuildForEvent(
   }
 }
 
-function progressBuildPhases(
-  set: (fn: (s: ChatState) => Partial<ChatState>) => void,
-  get: () => ChatState,
-) {
-  const focused = get().focusedBuildEventId
-  if (focused) {
-    progressBuildForEvent(focused, set, get)
-  }
-}
 
 function updatePhaseStatus(phases: BuildPhase[], id: string, status: BuildPhase["status"]): BuildPhase[] {
   return phases.map((p) => {
