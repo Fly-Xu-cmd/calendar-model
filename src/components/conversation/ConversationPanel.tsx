@@ -24,7 +24,6 @@ import { useCalendarStore } from "@/stores/calendarStore"
 import { SkillHashGlyph } from "@/components/calendar/SkillHashGlyph"
 import { EventFloatingPanel } from "@/components/calendar/EventFloatingPanel"
 import type { ChatAction, ChatMessage, BuildPhase } from "@/types"
-import type { PendingAuth } from "@/stores/chatStore"
 
 const AGENT_LIST = [
   { id: "ai-assistant", name: "助理", seedText: "ai-assistant", label: "随时吩咐" },
@@ -275,99 +274,6 @@ function BuildProcessCard() {
   )
 }
 
-function AuthorizationCard({ auth }: { auth: PendingAuth }) {
-  const authorizeBuildPhase = useChatStore((s) => s.authorizeBuildPhase)
-  const cancelAuth = useChatStore((s) => s.cancelAuth)
-  const retryAuth = useChatStore((s) => s.retryAuth)
-  const pendingAuths = useChatStore((s) => s.pendingAuths)
-
-  const isOAuth = auth.authType === "oauth"
-  const isFailed = auth.status === "failed"
-  const isAuthorizing = auth.status === "authorizing"
-  const queueCount = pendingAuths.filter((a) => a.status === "waiting").length
-
-  return (
-    <div className="card-enter rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/40 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-        <div className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-sm">
-          {isOAuth ? <Shield className="size-4 text-white" /> : <Globe className="size-4 text-white" />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-[13px] font-semibold text-slate-800">
-            {isFailed ? "授权失败" : isOAuth ? "需要 OAuth 授权" : "需要域名授权"}
-          </p>
-          <p className="text-[11px] text-slate-400 truncate">{auth.label}</p>
-        </div>
-        {queueCount > 1 && (
-          <span className="text-[10px] text-slate-400 bg-slate-100 rounded-full px-2 py-0.5 shrink-0">
-            +{queueCount - 1} 待处理
-          </span>
-        )}
-      </div>
-
-      <div className="px-4 pb-2">
-        <p className="text-[12px] text-slate-500 leading-relaxed">
-          {isFailed
-            ? "授权未完成，是否重新尝试？你也可以跳过此步骤或发消息调整配置。"
-            : isOAuth
-              ? "需要你授权 LinkedIn 账户，以便自动发布帖子。授权后可随时撤回。"
-              : "需要授权你的域名用于邮件发送，确保邮件的送达率。"}
-        </p>
-      </div>
-
-      <div className="flex gap-2 px-4 pb-3">
-        {isFailed ? (
-          <>
-            <button
-              onClick={() => retryAuth(auth.phaseId)}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 text-white py-2 text-[12px] font-medium hover:bg-amber-600 transition-colors"
-            >
-              重新授权
-            </button>
-            <button
-              onClick={() => cancelAuth(auth.phaseId)}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-slate-500 px-4 py-2 text-[12px] font-medium hover:bg-slate-50 transition-colors"
-            >
-              跳过
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => authorizeBuildPhase(auth.phaseId)}
-              disabled={isAuthorizing}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-blue-500 text-white py-2 text-[12px] font-medium hover:bg-blue-600 disabled:bg-blue-300 transition-colors"
-            >
-              {isAuthorizing ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  授权中…
-                </>
-              ) : (
-                <>
-                  {isOAuth ? <Shield className="size-3.5" /> : <Globe className="size-3.5" />}
-                  立即授权
-                </>
-              )}
-            </button>
-            <button
-              onClick={() => cancelAuth(auth.phaseId)}
-              disabled={isAuthorizing}
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-slate-500 px-4 py-2 text-[12px] font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors"
-            >
-              取消
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="border-t border-slate-100 px-4 py-1.5">
-        <span className="text-[10px] text-slate-300">授权期间你仍可发送消息进行调整</span>
-      </div>
-    </div>
-  )
-}
-
 function BarrageMessage({ message }: { message: ChatMessage }) {
   const events = useCalendarStore((s) => s.events)
   const activeSessionId = useChatStore((s) => s.activeSessionId)
@@ -446,7 +352,7 @@ function BarrageStream() {
   if (hidden) return null
 
   return (
-    <div className="barrage-container relative max-h-[120px] overflow-y-auto px-3 py-2 space-y-1.5 mask-fade-top">
+    <div className="barrage-container relative max-h-[240px] overflow-y-auto px-3 py-2 space-y-1.5 mask-fade-top">
       <button
         onClick={() => setHidden(true)}
         className="sticky top-0 right-0 z-10 float-right flex size-5 items-center justify-center rounded-full bg-slate-200/80 text-slate-400 hover:bg-slate-300 hover:text-slate-600 transition-colors"
@@ -475,10 +381,12 @@ function OptionButtons({
   actions,
   onSelect,
   onDismiss,
+  questionText,
 }: {
   actions: ChatAction[]
   onSelect: (label: string) => void
   onDismiss: () => void
+  questionText?: string
 }) {
   const currentAgent = useCurrentAgent()
   const [activeIdx, setActiveIdx] = useState(0)
@@ -517,17 +425,28 @@ function OptionButtons({
       onKeyDown={handleKeyDown}
       className="card-enter rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/40 overflow-hidden"
     >
-      <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <SkillHashGlyph seedText={currentAgent.seedText} size={20} />
-          <span className="text-[13px] font-semibold text-slate-700">请选择</span>
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-center justify-between mb-1">
+          <div className="flex items-center gap-2">
+            <SkillHashGlyph seedText={currentAgent.seedText} size={20} />
+            <span className="text-[13px] font-semibold text-slate-700">请选择</span>
+          </div>
+          <button
+            onClick={onDismiss}
+            className="rounded-md p-0.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          >
+            <X className="size-3.5" />
+          </button>
         </div>
-        <button
-          onClick={onDismiss}
-          className="rounded-md p-0.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-        >
-          <X className="size-3.5" />
-        </button>
+        {questionText && (
+          <div className="text-[12px] text-slate-500 leading-relaxed whitespace-pre-line max-h-[30vh] overflow-y-auto scrollbar-none">
+            {questionText.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+              part.startsWith("**") && part.endsWith("**")
+                ? <strong key={i} className="font-semibold text-slate-700">{part.slice(2, -2)}</strong>
+                : <span key={i}>{part}</span>,
+            )}
+          </div>
+        )}
       </div>
 
       <div className="px-2 pb-1">
@@ -791,6 +710,7 @@ export function ConversationPanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const hasMessages = messages.length > 0
+  const buildCompleted = useChatStore((s) => s.buildCompleted)
 
   const lastAssistantMsg = useMemo(
     () => [...messages].reverse().find((m) => m.role === "barrage" || m.role === "assistant"),
@@ -811,6 +731,7 @@ export function ConversationPanel() {
 
   const stopCurrentWork = useChatStore((s) => s.stopCurrentWork)
 
+  const isBuilding = buildPhases.length > 0
   const isWorking = isTyping || buildPhases.some((p) => p.status === "running") || !!topAuth
 
   const handleSend = () => {
@@ -826,6 +747,26 @@ export function ConversationPanel() {
   const handleSelectAction = (label: string) => {
     const msgs = useChatStore.getState().messages
     const last = [...msgs].reverse().find((m) => m.role === "barrage" || m.role === "assistant")
+
+    if (label === "确认发布" || label === "跳过本次") {
+      const sid = useChatStore.getState().activeSessionId
+      const evts = useCalendarStore.getState().events
+      const draft = evts.find((e) => e.isAiGenerated && e.status === "draft" && e.chatSessionId === sid)
+      if (draft) {
+        if (label === "确认发布") {
+          useCalendarStore.getState().confirmEvent(draft.id)
+        } else {
+          useCalendarStore.getState().skipEvent(draft.id)
+        }
+        if (last?.actions) {
+          useChatStore.setState({
+            messages: msgs.map((m) => m.id === last.id ? { ...m, actions: undefined } : m),
+          })
+        }
+        return
+      }
+    }
+
     if (last?.actions) {
       useChatStore.setState({
         messages: msgs.map((m) =>
@@ -859,26 +800,36 @@ export function ConversationPanel() {
         </div>
       )}
 
-      {/* authorization card (shows first in queue, with badge for remaining) */}
-      {topAuth && (
-        <div className="mb-2">
-          <AuthorizationCard auth={topAuth} />
-        </div>
-      )}
+      {/* auth is now merged into OptionButtons above */}
 
-      {/* option buttons */}
-      {pendingActions && (
+      {/* option buttons (includes auth as same-level options) */}
+      {(pendingActions || topAuth) && (
         <div className="mb-2">
           <OptionButtons
-            actions={pendingActions}
-            onSelect={handleSelectAction}
+            actions={[
+              ...(pendingActions ?? []),
+              ...(topAuth ? [
+                { id: `auth-${topAuth.phaseId}`, label: topAuth.label, variant: "primary" as const },
+                { id: `auth-skip-${topAuth.phaseId}`, label: "跳过授权", variant: "secondary" as const },
+              ] : []),
+            ]}
+            onSelect={(label) => {
+              if (topAuth && label === topAuth.label) {
+                useChatStore.getState().authorizeBuildPhase(topAuth.phaseId)
+              } else if (topAuth && label === "跳过授权") {
+                useChatStore.getState().cancelAuth(topAuth.phaseId)
+              } else {
+                handleSelectAction(label)
+              }
+            }}
             onDismiss={dismissActions}
+            questionText={topAuth ? (topAuth.authType === "oauth" ? "需要授权才能继续构建" : "需要域名授权") : lastAssistantMsg?.content}
           />
         </div>
       )}
 
-      {/* input card (e.g. LinkedIn URL input) */}
-      {pendingInput && !pendingActions && (
+      {/* input card (e.g. LinkedIn URL input) — hide during build */}
+      {pendingInput && !pendingActions && !topAuth && !isBuilding && (
         <div className="mb-2">
           <InputCard
             placeholder={pendingInput}
@@ -898,16 +849,16 @@ export function ConversationPanel() {
         </div>
       )}
 
-      {/* Agent bar: always above input for session switching */}
-      {!hasFloating && (
-        <AgentSessionBar fallback={!pendingActions && !pendingInput ? <AgentBar /> : undefined} />
+      {/* Agent bar: only show when NOT in build mode and no floating panel */}
+      {!hasFloating && !isBuilding && !pendingActions && !topAuth && (
+        <AgentSessionBar fallback={!pendingInput ? <AgentBar /> : undefined} />
       )}
 
-      {/* input bar */}
-      {!pendingActions && !pendingInput && (
+      {/* input bar — always visible during build */}
+      {(!pendingActions && !pendingInput && !topAuth) && (
         <div className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-300/20 overflow-hidden">
-          {/* barrage stream above input */}
-          {hasMessages && <BarrageStream />}
+          {/* barrage stream above input — hidden after build completes or when floating panel is open */}
+          {hasMessages && !buildCompleted && !hasFloating && <BarrageStream />}
 
           <div className={cn("px-3 sm:px-5 pt-3 sm:pt-4 pb-2", hasMessages && "border-t border-slate-100")}>
             <textarea

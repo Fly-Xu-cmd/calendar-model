@@ -2,8 +2,6 @@ import { useState, useRef, useEffect, useMemo } from "react"
 import {
   X,
   Check,
-  SkipForward,
-  Unlock,
   Lock,
   ChevronDown,
   ChevronRight,
@@ -15,7 +13,6 @@ import {
 } from "lucide-react"
 import { isAfter, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
 import { useCalendarStore } from "@/stores/calendarStore"
 import { useChatStore } from "@/stores/chatStore"
 import { SkillHashGlyph } from "./SkillHashGlyph"
@@ -71,11 +68,14 @@ function SummaryTab({ eventId }: { eventId: string }) {
 
   const ai = event.aiContent
   const isStreaming = streamingEventId === event.id
+  const isDraft = event.status === "draft" || event.status === "loading"
 
-  if (!ai) {
+  if (!ai || isDraft) {
     return (
-      <div className="px-4 py-4">
-        <p className="text-[13px] text-slate-400">{event.description ?? "无更多详情"}</p>
+      <div className="px-4 py-6 text-center">
+        <p className="text-[13px] text-slate-400">
+          {isDraft && ai ? "待确认内容请在下方输入框区域审核" : (event.description ?? "暂无已确认的结果")}
+        </p>
       </div>
     )
   }
@@ -346,8 +346,6 @@ function EventFloatingPanelItem({
   onClose: (id: string) => void
 }) {
   const events = useCalendarStore((s) => s.events)
-  const confirmEvent = useCalendarStore((s) => s.confirmEvent)
-  const skipEvent = useCalendarStore((s) => s.skipEvent)
   const trustMode = useCalendarStore((s) => s.trustMode)
   const setTrustMode = useCalendarStore((s) => s.setTrustMode)
   const streamingEventId = useCalendarStore((s) => s.streamingEventId)
@@ -459,36 +457,10 @@ function EventFloatingPanelItem({
         {activeTab === "chat" && <ChatTab />}
       </div>
 
-      {/* action buttons (only on summary tab, not for future events) */}
-      {activeTab === "summary" && ai && !isStreaming && !isFutureEvent && (
+      {/* action buttons (only on summary tab, only for confirmed/actioned events) */}
+      {activeTab === "summary" && ai && !isStreaming && !isFutureEvent && !isDraft && (
         <div className="shrink-0 border-t border-slate-100 px-4 py-2.5 space-y-2">
-          {isDraft && (
-            <div className="flex gap-2">
-              <Button
-                onClick={() => confirmEvent(event.id)}
-                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg h-8 text-[12px]"
-              >
-                <Check className="size-3 mr-1" /> 确认发布
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => skipEvent(event.id)}
-                className="rounded-lg h-8 text-[12px] px-3"
-              >
-                <SkipForward className="size-3 mr-1" /> 跳过
-              </Button>
-            </div>
-          )}
-
           <div className="flex items-center justify-between">
-            {isDraft && trustMode === "confirm" && (
-              <button
-                onClick={() => setTrustMode("auto")}
-                className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                <Unlock className="size-3" /> 以后不用确认，直接发
-              </button>
-            )}
             {trustMode === "auto" && (
               <button
                 onClick={() => setTrustMode("confirm")}

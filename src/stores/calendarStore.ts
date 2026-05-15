@@ -379,6 +379,41 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
             streamingEventId: null,
             editedLinkedinDraft: get().selectedEventId === targetId ? ai.linkedinDraft : get().editedLinkedinDraft,
           }))
+
+          const resultEvent = get().events.find((e) => e.id === targetId)
+          const aiData = resultEvent?.aiContent
+          const parts: string[] = ["**首次运行已完成**\n"]
+          if (aiData) {
+            if (aiData.marketOverview) {
+              parts.push(`**市场概览**\n${aiData.marketOverview}`)
+              if (aiData.medianPrice) parts.push(`中位价 **${aiData.medianPrice}**（${aiData.priceChange}），库存 **${aiData.inventory}** 套，新增 **${aiData.newListings}** 套`)
+            }
+            if (aiData.listings.length > 0) {
+              parts.push(`\n**新房源（${aiData.listings.length} 套）**\n${aiData.listings.map((l) => `• ${l.address} — ${l.price} · ${l.beds}bd/${l.baths}ba`).join("\n")}`)
+            }
+            if (aiData.linkedinDraft) parts.push(`\n**LinkedIn 帖子草稿**\n${aiData.linkedinDraft}`)
+            if (aiData.emailDrafts.length > 0) parts.push(`\n**邮件草稿**\n${aiData.emailDrafts.map((d) => `• ${d.to}：${d.subject}`).join("\n")}`)
+          }
+          const summaryText = parts.join("\n")
+
+          const reviewMsg = {
+            id: `r-${Date.now()}-review-${targetId}`,
+            role: "barrage" as const,
+            content: summaryText,
+            timestamp: new Date(),
+            icon: "task" as const,
+            agentId: targetId,
+            actions: [
+              { id: "confirm-publish", label: "确认发布", variant: "primary" as const },
+              { id: "skip-publish", label: "跳过本次", variant: "secondary" as const },
+            ],
+          }
+
+          const ownerSessionId = targetId.startsWith("agent-") ? targetId.slice(6) : null
+          const cs = useChatStore.getState()
+          if (ownerSessionId === cs.activeSessionId || !ownerSessionId) {
+            useChatStore.setState({ messages: [...cs.messages, reviewMsg] })
+          }
         }
         streamSteps()
       }

@@ -100,6 +100,7 @@ interface ChatState {
 
   buildPhases: BuildPhase[]
   buildPaused: boolean
+  buildCompleted: boolean
   pendingAuth: PendingAuth | null
 
   setInputValue: (v: string) => void
@@ -369,6 +370,7 @@ function progressBuildForEvent(
       const update: Partial<ChatState> = {
         activeBuilds: restBuilds,
         pendingAuth: null,
+        buildCompleted: Object.keys(restBuilds).length === 0,
         buildPhases: Object.keys(restBuilds).length > 0
           ? Object.values(restBuilds)[0].phases
           : [],
@@ -619,6 +621,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   focusedBuildEventId: null,
   buildPhases: [],
   buildPaused: false,
+  buildCompleted: false,
   pendingAuth: null,
 
   setInputValue: (v) => set({ inputValue: v }),
@@ -806,6 +809,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       focusedBuildEventId: null,
       buildPhases: [],
       buildPaused: false,
+      buildCompleted: false,
     }))
     return id
   },
@@ -816,6 +820,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!session) return
     const focusedId = session.focusedBuildEventId ?? null
     const build = focusedId ? get().activeBuilds[focusedId] : null
+    const isBuildDone = !build && focusedId != null
     set({
       activeSessionId: id,
       messages: session.messages,
@@ -826,6 +831,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       focusedBuildEventId: focusedId,
       buildPhases: build?.phases ?? [],
       buildPaused: build?.paused ?? false,
+      buildCompleted: isBuildDone,
       pendingAuth: build?.pendingAuth ?? null,
     })
   },
@@ -856,6 +862,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       focusedBuildEventId: null,
       buildPhases: [],
       buildPaused: false,
+      buildCompleted: false,
     }))
   },
 
