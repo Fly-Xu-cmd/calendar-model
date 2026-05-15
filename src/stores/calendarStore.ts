@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { format, addDays, addWeeks, subWeeks } from "date-fns"
-import type { CalendarEvent, PageView, TrustMode, AiEventContent } from "@/types"
+import type { CalendarEvent, PageView, TrustMode, AiEventContent, EventPlan } from "@/types"
 import { useChatStore } from "./chatStore"
 
 interface CalendarState {
@@ -8,7 +8,7 @@ interface CalendarState {
   events: CalendarEvent[]
   pageView: PageView
   selectedEventId: string | null
-  floatingEventId: string | null
+  floatingEventIds: string[]
   trustMode: TrustMode
   editingLinkedin: boolean
   editedLinkedinDraft: string
@@ -22,7 +22,7 @@ interface CalendarState {
   removeEvent: (id: string) => void
   selectEvent: (id: string | null) => void
   openFloating: (id: string) => void
-  closeFloating: () => void
+  closeFloating: (id?: string) => void
   confirmEvent: (id: string) => void
   skipEvent: (id: string) => void
   setTrustMode: (mode: TrustMode) => void
@@ -33,15 +33,33 @@ interface CalendarState {
   updateEventAiContent: (id: string, partial: Partial<AiEventContent>) => void
   setStreamingEventId: (id: string | null) => void
   createPlaceholderEvents: () => void
-  fillEventContent: () => void
+  fillEventContent: (eventId?: string) => void
+  createRecurringEvents: () => void
   streamAiEvents: () => void
 }
 
 const today = new Date()
 const fmt = (d: Date) => format(d, "yyyy-MM-dd")
 const todayStr = fmt(today)
+const currentTime = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`
 const dayOfWeek = today.getDay()
 const mondayBased = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+
+const defaultPlan: EventPlan = {
+  schedule: "每天 9:00 AM",
+  steps: [
+    "抓取富兰克林县当日新上市的独栋住宅（$200k-$400k）",
+    "汇总哥伦布市整体市场数据（中位价、库存、趋势）",
+    "用你的风格生成一篇 LinkedIn 帖子草稿",
+    "为每套新房源生成一封个性化推广邮件草稿",
+    "将以上内容推送到你的日历",
+  ],
+  filters: {
+    "房产类型": "独栋住宅",
+    "价格区间": "$200k - $400k",
+    "区域": "Franklin County, OH",
+  },
+}
 
 const personalEvents: CalendarEvent[] = [
   {
@@ -86,6 +104,7 @@ export const aiEventsData: CalendarEvent[] = [
           tags: ["LinkedIn 帖子已发", "2 封邮件已发"],
           status: "auto-published" as const,
           isAiGenerated: true,
+          plan: defaultPlan,
           aiContent: {
             marketOverview: "昨日市场稳定，2 套新增房源已自动推广。",
             medianPrice: "$285,000",
@@ -116,6 +135,7 @@ export const aiEventsData: CalendarEvent[] = [
     tags: ["自动生成", "待你确认"],
     status: "draft",
     isAiGenerated: true,
+    plan: defaultPlan,
     aiContent: {
       marketOverview: "富兰克林县独栋住宅市场活跃，新增 3 套房源进入目标价位区间。买家竞争加剧，平均 DOM 缩短至 18 天。",
       medianPrice: "$287,500",
@@ -146,6 +166,7 @@ export const aiEventsData: CalendarEvent[] = [
     tags: ["自动生成", "待你确认"],
     status: "draft",
     isAiGenerated: true,
+    plan: defaultPlan,
     aiContent: {
       marketOverview: "今日富兰克林县目标价位区间内无新增独栋住宅。市场整体库存微降，中位价小幅回调。",
       medianPrice: "$289,000",
@@ -168,6 +189,7 @@ export const aiEventsData: CalendarEvent[] = [
     tags: ["自动生成", "待你确认"],
     status: "draft",
     isAiGenerated: true,
+    plan: defaultPlan,
     aiContent: {
       marketOverview: "本周新增房源量创新高，5 套独栋住宅进入目标区间，其中 2 套位于热门学区。",
       medianPrice: "$291,000",
@@ -218,7 +240,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   events: personalEvents,
   pageView: "calendar",
   selectedEventId: null,
-  floatingEventId: null,
+  floatingEventIds: [],
   trustMode: "confirm",
   editingLinkedin: false,
   editedLinkedinDraft: "",
@@ -245,8 +267,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   },
 
   openFloating: (id) => {
+    const MAX_STACK = 5
     const ev = get().events.find((e) => e.id === id)
-    set({ floatingEventId: id, selectedEventId: id })
+    const current = get().floatingEventIds
+    const filtered = current.filter((eid) => eid !== id)
+    const trimmed = filtered.length >= MAX_STACK ? filtered.slice(filtered.length - MAX_STACK + 1) : filtered
+    set({ floatingEventIds: [...trimmed, id], selectedEventId: id })
     if (ev?.chatSessionId) {
       useChatStore.getState().switchSession(ev.chatSessionId)
     } else if (ev?.isAiGenerated) {
@@ -259,9 +285,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     }
   },
 
-  closeFloating: () => {
-    set({ floatingEventId: null })
-    useChatStore.getState().resetChat()
+  closeFloating: (id) => {
+    if (id) {
+      set((s) => ({ floatingEventIds: s.floatingEventIds.filter((eid) => eid !== id) }))
+    } else {
+      set((s) => ({ floatingEventIds: s.floatingEventIds.slice(0, -1) }))
+    }
   },
 
   updateEventAiContent: (id, partial) =>
@@ -277,73 +306,101 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   createPlaceholderEvents: () => {
     const chatSessionId = useChatStore.getState().activeSessionId
-    const placeholders: CalendarEvent[] = aiEventsData.map((ev) => ({
-      id: ev.id,
-      title: ev.date,
-      date: ev.date,
-      startTime: ev.startTime,
-      endTime: ev.endTime,
+    if (!chatSessionId) return
+    const eventId = `agent-${chatSessionId}`
+    if (get().events.find((e) => e.id === eventId)) return
+    const todayEvent = aiEventsData.find((e) => e.id === "ai-today")
+    if (!todayEvent) return
+    const placeholder: CalendarEvent = {
+      id: eventId,
+      title: todayEvent.date,
+      date: todayEvent.date,
+      startTime: todayEvent.startTime,
+      endTime: todayEvent.endTime,
       color: "blue",
       status: "loading" as const,
       isAiGenerated: true,
-      chatSessionId: chatSessionId ?? undefined,
+      chatSessionId,
       tags: ["正在准备…"],
-    }))
-    set((s) => ({ events: [...s.events, ...placeholders] }))
+    }
+    set((s) => ({ events: [...s.events, placeholder] }))
   },
 
-  fillEventContent: () => {
-    let delay = 200
-    aiEventsData.forEach((fullEvent, idx) => {
-      const d = delay
-      setTimeout(() => {
-        set((s) => ({
-          streamingEventId: fullEvent.id,
-          selectedEventId: fullEvent.id,
-          events: s.events.map((e) =>
-            e.id === fullEvent.id
-              ? {
-                  ...e,
-                  title: fullEvent.title,
-                  tags: fullEvent.tags,
-                  aiContent: fullEvent.aiContent
-                    ? { marketOverview: "", medianPrice: "", priceChange: "", inventory: 0, newListings: 0, listings: [], linkedinDraft: "", emailDrafts: [] }
-                    : undefined,
-                }
-              : e,
-          ),
-        }))
+  fillEventContent: (passedEventId?: string) => {
+    const targetId = passedEventId ?? (() => {
+      const sid = useChatStore.getState().activeSessionId
+      return sid ? `agent-${sid}` : null
+    })()
+    if (!targetId) return
+    const template = aiEventsData.find((e) => e.id === "ai-today")
+    if (!template) return
 
-        if (fullEvent.aiContent) {
-          const ai = fullEvent.aiContent
-          const streamSteps = async () => {
-            await streamText(ai.marketOverview, (t) =>
-              get().events.find(e => e.id === fullEvent.id) &&
-              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, marketOverview: t } } : e) })),
-            )
-            set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, medianPrice: ai.medianPrice, priceChange: ai.priceChange, inventory: ai.inventory, newListings: ai.newListings } } : e) }))
-            await new Promise((r) => setTimeout(r, 200))
-            for (const listing of ai.listings) {
-              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, listings: [...e.aiContent!.listings, listing] } } : e) }))
-              await new Promise((r) => setTimeout(r, 150))
-            }
-            await streamText(ai.linkedinDraft, (t) =>
-              get().events.find(e => e.id === fullEvent.id) &&
-              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, linkedinDraft: t } } : e) })),
-            )
-            for (const email of ai.emailDrafts) {
-              set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, aiContent: { ...e.aiContent!, emailDrafts: [...e.aiContent!.emailDrafts, email] } } : e) }))
-              await new Promise((r) => setTimeout(r, 100))
-            }
-            set((s) => ({ events: s.events.map((e) => e.id === fullEvent.id ? { ...e, status: fullEvent.status ?? ("draft" as const), tags: fullEvent.tags } : e) }))
-            if (idx === aiEventsData.length - 1) set({ streamingEventId: null })
-            set((s) => ({ editedLinkedinDraft: s.selectedEventId === fullEvent.id ? ai.linkedinDraft : s.editedLinkedinDraft }))
+    setTimeout(() => {
+      set((s) => ({
+        streamingEventId: targetId,
+        selectedEventId: targetId,
+        events: s.events.map((e) =>
+          e.id === targetId
+            ? {
+                ...e,
+                title: template.title,
+                tags: template.tags,
+                plan: template.plan,
+                aiContent: template.aiContent
+                  ? { marketOverview: "", medianPrice: "", priceChange: "", inventory: 0, newListings: 0, listings: [], linkedinDraft: "", emailDrafts: [] }
+                  : undefined,
+              }
+            : e,
+        ),
+      }))
+
+      if (template.aiContent) {
+        const ai = template.aiContent
+        const streamSteps = async () => {
+          await streamText(ai.marketOverview, (t) =>
+            get().events.find(e => e.id === targetId) &&
+            set((s) => ({ events: s.events.map((e) => e.id === targetId ? { ...e, aiContent: { ...e.aiContent!, marketOverview: t } } : e) })),
+          )
+          set((s) => ({ events: s.events.map((e) => e.id === targetId ? { ...e, aiContent: { ...e.aiContent!, medianPrice: ai.medianPrice, priceChange: ai.priceChange, inventory: ai.inventory, newListings: ai.newListings } } : e) }))
+          await new Promise((r) => setTimeout(r, 200))
+          for (const listing of ai.listings) {
+            set((s) => ({ events: s.events.map((e) => e.id === targetId ? { ...e, aiContent: { ...e.aiContent!, listings: [...e.aiContent!.listings, listing] } } : e) }))
+            await new Promise((r) => setTimeout(r, 150))
           }
-          streamSteps()
+          await streamText(ai.linkedinDraft, (t) =>
+            get().events.find(e => e.id === targetId) &&
+            set((s) => ({ events: s.events.map((e) => e.id === targetId ? { ...e, aiContent: { ...e.aiContent!, linkedinDraft: t } } : e) })),
+          )
+          for (const email of ai.emailDrafts) {
+            set((s) => ({ events: s.events.map((e) => e.id === targetId ? { ...e, aiContent: { ...e.aiContent!, emailDrafts: [...e.aiContent!.emailDrafts, email] } } : e) }))
+            await new Promise((r) => setTimeout(r, 100))
+          }
+          set((s) => ({
+            events: s.events.map((e) => e.id === targetId ? { ...e, status: template.status ?? ("draft" as const), tags: template.tags } : e),
+            streamingEventId: null,
+            editedLinkedinDraft: get().selectedEventId === targetId ? ai.linkedinDraft : get().editedLinkedinDraft,
+          }))
         }
-      }, d)
-      delay += 800
-    })
+        streamSteps()
+      }
+    }, 200)
+  },
+
+  createRecurringEvents: () => {
+    const chatSessionId = useChatStore.getState().activeSessionId
+    if (!chatSessionId) return
+    const futureEvents = aiEventsData.filter((e) => e.id !== "ai-today" && e.id !== "ai-yesterday")
+    const newEvents: CalendarEvent[] = futureEvents.map((ev) => ({
+      ...ev,
+      id: `${ev.id}-${chatSessionId}`,
+      chatSessionId,
+      plan: ev.plan,
+      status: undefined,
+      aiContent: undefined,
+      tags: ["计划中"],
+      title: "市场速报 — 待运行",
+    }))
+    set((s) => ({ events: [...s.events, ...newEvents] }))
   },
 
   streamAiEvents: () => {

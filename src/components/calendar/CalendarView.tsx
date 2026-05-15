@@ -1,15 +1,15 @@
 import {
   format,
   addDays,
-  startOfWeek,
-  endOfWeek,
   isSameDay,
+  isAfter,
 } from "date-fns"
 import {
   ChevronLeft,
   ChevronRight,
   Clock,
   Loader2,
+  CalendarDays,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -17,14 +17,17 @@ import { useCalendarStore } from "@/stores/calendarStore"
 import { SkillHashGlyph } from "@/components/calendar/SkillHashGlyph"
 import type { CalendarEvent } from "@/types"
 
-const WEEKDAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+const WEEKDAY_LABELS_MAP: Record<number, string> = {
+  0: "SUN", 1: "MON", 2: "TUE", 3: "WED", 4: "THU", 5: "FRI", 6: "SAT",
+}
 
-function LoadingEventCard({ event: _event }: { event: CalendarEvent }) {
+function LoadingEventCard({ event, onClick }: { event: CalendarEvent; onClick?: () => void }) {
   return (
-    <div className="group flex w-full items-center p-3 rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/50 to-white/50 ai-event-streaming">
-      <div className="me-3 shrink-0">
-        <div className="flex size-9 items-center justify-center rounded-full bg-blue-100/80">
-          <Loader2 className="size-4 animate-spin text-blue-400" />
+    <div onClick={onClick} className={cn("group flex w-full items-center p-3 rounded-xl border border-blue-200/60 bg-gradient-to-r from-blue-50/50 to-white/50 ai-event-streaming", onClick && "cursor-pointer")}>
+      <div className="me-3 shrink-0 relative">
+        <SkillHashGlyph seedText={event.id} size={36} />
+        <div className="absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-white shadow-sm">
+          <Loader2 className="size-3 animate-spin text-blue-400" />
         </div>
       </div>
       <div className="min-w-0 flex-1">
@@ -40,11 +43,13 @@ function AiEventCard({
   onClick,
   isSelected,
   isStreaming,
+  isFuture,
 }: {
   event: CalendarEvent
   onClick: () => void
   isSelected: boolean
   isStreaming: boolean
+  isFuture: boolean
 }) {
   const isDraft = event.status === "draft"
   const isConfirmed = event.status === "confirmed"
@@ -53,6 +58,7 @@ function AiEventCard({
 
   let statusText = ""
   if (isStreaming) statusText = "生成中…"
+  else if (isFuture) statusText = "计划中"
   else if (isDraft) statusText = "待确认"
   else if (isConfirmed) statusText = "已发布"
   else if (isAuto) statusText = "自动发布"
@@ -70,6 +76,7 @@ function AiEventCard({
         "rounded-xl border bg-white transition-[background-color,box-shadow,border-color] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]",
         "hover:bg-slate-50 hover:shadow-sm",
         isSkipped && "opacity-50",
+        isFuture && "opacity-70 border-dashed",
         isSelected && "bg-slate-100 border-slate-300 shadow-sm",
         isStreaming
           ? "border-blue-300 ai-event-streaming"
@@ -92,7 +99,7 @@ function AiEventCard({
         </p>
         <p className={cn(
           "truncate text-sm font-normal leading-4 mt-0.5",
-          isStreaming ? "text-blue-500" : "text-[#8f8f8f]",
+          isStreaming ? "text-blue-500" : isFuture ? "text-slate-400 italic" : "text-[#8f8f8f]",
         )}>
           {event.startTime} · {statusText}
         </p>
@@ -102,9 +109,88 @@ function AiEventCard({
         "shrink-0 transition-colors duration-200 relative z-[1]",
         isStreaming ? "text-blue-400" : "text-[#8f8f8f] group-hover:text-[#0d0d0d]",
       )}>
-        <ChevronRight className="size-4" strokeWidth={2} />
+        {isFuture ? (
+          <CalendarDays className="size-4" strokeWidth={2} />
+        ) : (
+          <ChevronRight className="size-4" strokeWidth={2} />
+        )}
       </div>
     </div>
+  )
+}
+
+function StackedEventCards({
+  events,
+  onEventClick,
+  floatingEventIds,
+  streamingEventId,
+}: {
+  events: CalendarEvent[]
+  onEventClick: (id: string) => void
+  floatingEventIds: string[]
+  streamingEventId: string | null
+}) {
+  const aiEvents = events.filter((e) => e.isAiGenerated)
+  const today = new Date()
+
+  if (aiEvents.length <= 1) {
+    return (
+      <>
+        {events.map((event) =>
+          event.status === "loading" ? (
+            <LoadingEventCard key={event.id} event={event} onClick={() => onEventClick(event.id)} />
+          ) : event.isAiGenerated ? (
+            <AiEventCard
+              key={event.id}
+              event={event}
+              onClick={() => onEventClick(event.id)}
+              isSelected={floatingEventIds.includes(event.id)}
+              isStreaming={streamingEventId === event.id}
+              isFuture={isAfter(new Date(event.date), today) && !isSameDay(new Date(event.date), today)}
+            />
+          ) : (
+            <RegularEventCard key={event.id} event={event} />
+          ),
+        )}
+      </>
+    )
+  }
+
+  const regularEvents = events.filter((e) => !e.isAiGenerated)
+
+  return (
+    <>
+      {regularEvents.map((event) => (
+        <RegularEventCard key={event.id} event={event} />
+      ))}
+      <div className="stacked-cards relative">
+        {aiEvents.map((event, idx) => (
+          <div
+            key={event.id}
+            className={cn(
+              "stacked-card-item",
+              idx > 0 && "stacked-card-offset",
+            )}
+            style={{
+              "--stack-index": idx,
+              "--stack-total": aiEvents.length,
+            } as React.CSSProperties}
+          >
+            {event.status === "loading" ? (
+              <LoadingEventCard event={event} onClick={() => onEventClick(event.id)} />
+            ) : (
+              <AiEventCard
+                event={event}
+                onClick={() => onEventClick(event.id)}
+                isSelected={floatingEventIds.includes(event.id)}
+                isStreaming={streamingEventId === event.id}
+                isFuture={isAfter(new Date(event.date), today) && !isSameDay(new Date(event.date), today)}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   )
 }
 
@@ -129,17 +215,17 @@ function RegularEventCard({ event }: { event: CalendarEvent }) {
 }
 
 export function CalendarView() {
-  const { currentDate, events, nextWeek, prevWeek, floatingEventId, openFloating, streamingEventId } =
+  const { currentDate, events, nextWeek, prevWeek, floatingEventIds, openFloating, streamingEventId } =
     useCalendarStore()
 
-  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
-  const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 })
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+  const days = Array.from({ length: 7 }, (_, i) => addDays(currentDate, i))
+  const firstDay = days[0]
+  const lastDay = days[6]
 
-  const sameMonth = weekStart.getMonth() === weekEnd.getMonth()
+  const sameMonth = firstDay.getMonth() === lastDay.getMonth()
   const weekLabel = sameMonth
-    ? `${format(weekStart, "yyyy年M月d日")} - ${format(weekEnd, "d日")}`
-    : `${format(weekStart, "M月d日")} - ${format(weekEnd, "M月d日")}`
+    ? `${format(firstDay, "yyyy年M月d日")} - ${format(lastDay, "d日")}`
+    : `${format(firstDay, "M月d日")} - ${format(lastDay, "M月d日")}`
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -159,9 +245,10 @@ export function CalendarView() {
 
         {/* grid */}
         <div className="flex flex-1 overflow-x-auto overflow-y-hidden">
-          {days.map((day, idx) => {
+          {days.map((day) => {
             const isToday = isSameDay(day, new Date())
             const dateStr = format(day, "yyyy-MM-dd")
+            const dayOfWeek = day.getDay()
             const dayEvents = events
               .filter((e) => e.date === dateStr)
               .sort((a, b) => a.startTime.localeCompare(b.startTime))
@@ -169,43 +256,57 @@ export function CalendarView() {
             return (
               <div
                 key={day.toISOString()}
-                className="flex flex-col border-r border-slate-100 last:border-r-0 min-w-[140px] sm:min-w-0 sm:flex-1"
+                className={cn(
+                  "flex flex-col border-r border-slate-100 last:border-r-0",
+                  isToday
+                    ? "min-w-[180px] sm:min-w-0 today-column-highlight"
+                    : "min-w-[120px] sm:min-w-0",
+                )}
+                style={{ flex: isToday ? "1.6" : "1" }}
               >
                 <div
                   className={cn(
-                    "px-2 py-2.5 sm:py-3 border-b border-slate-100",
-                    isToday && "bg-blue-50/40",
+                    "px-2 py-2.5 sm:py-3 border-b",
+                    isToday
+                      ? "bg-blue-50/50 border-blue-100"
+                      : "border-slate-100",
                   )}
                 >
-                  <p className="text-sm text-slate-400 font-medium tracking-wider">
-                    {WEEKDAY_LABELS[idx]}
+                  <p className={cn(
+                    "text-sm font-medium tracking-wider",
+                    isToday ? "text-blue-600" : "text-slate-400",
+                  )}>
+                    {WEEKDAY_LABELS_MAP[dayOfWeek]}
                   </p>
-                  <p
-                    className={cn(
-                      "text-lg sm:text-xl font-bold mt-0.5",
-                      isToday ? "text-blue-600" : "text-slate-700",
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p
+                      className={cn(
+                        "font-bold",
+                        isToday
+                          ? "text-2xl sm:text-3xl text-blue-600"
+                          : "text-lg sm:text-xl text-slate-700",
+                      )}
+                    >
+                      {format(day, "d")}
+                    </p>
+                    {isToday && (
+                      <span className="text-[10px] font-semibold text-blue-500 bg-blue-100 rounded-full px-2 py-0.5 uppercase tracking-wider">
+                        今天
+                      </span>
                     )}
-                  >
-                    {format(day, "d")}
-                  </p>
+                  </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-1.5 bg-slate-50/30">
-                  {dayEvents.map((event) =>
-                    event.status === "loading" ? (
-                      <LoadingEventCard key={event.id} event={event} />
-                    ) : event.isAiGenerated ? (
-                      <AiEventCard
-                        key={event.id}
-                        event={event}
-                        onClick={() => openFloating(event.id)}
-                        isSelected={floatingEventId === event.id}
-                        isStreaming={streamingEventId === event.id}
-                      />
-                    ) : (
-                      <RegularEventCard key={event.id} event={event} />
-                    ),
-                  )}
+                <div className={cn(
+                  "flex-1 overflow-y-auto p-1.5 sm:p-2 space-y-1.5",
+                  isToday ? "bg-transparent" : "bg-slate-50/30",
+                )}>
+                  <StackedEventCards
+                    events={dayEvents}
+                    onEventClick={openFloating}
+                    floatingEventIds={floatingEventIds}
+                    streamingEventId={streamingEventId}
+                  />
                 </div>
               </div>
             )
