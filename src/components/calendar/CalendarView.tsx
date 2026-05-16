@@ -10,6 +10,7 @@ import {
   Clock,
   Loader2,
   CalendarDays,
+  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -55,9 +56,11 @@ function AiEventCard({
   const isConfirmed = event.status === "confirmed"
   const isAuto = event.status === "auto-published"
   const isSkipped = event.status === "skipped"
+  const isFailed = event.status === "failed"
 
   let statusText = ""
   if (isStreaming) statusText = "生成中…"
+  else if (isFailed) statusText = "需要处理"
   else if (isFuture) statusText = "计划中"
   else if (isDraft) statusText = "待确认"
   else if (isConfirmed) statusText = "已发布"
@@ -77,10 +80,12 @@ function AiEventCard({
         "hover:bg-slate-50 hover:shadow-sm",
         isSkipped && "opacity-50",
         isFuture && "opacity-70 border-dashed",
-        isSelected && "bg-slate-100 border-slate-300 shadow-sm",
+        isFailed && "border-red-300 bg-red-50/40 hover:bg-red-50",
+        isSelected && !isFailed && "bg-slate-100 border-slate-300 shadow-sm",
+        isSelected && isFailed && "bg-red-100 border-red-400 shadow-sm",
         isStreaming
           ? "border-blue-300 ai-event-streaming"
-          : "border-slate-200",
+          : !isFailed && "border-slate-200",
       )}
     >
       {isStreaming && (
@@ -91,6 +96,11 @@ function AiEventCard({
 
       <div className="me-3 shrink-0 relative z-[1]">
         <SkillHashGlyph seedText={event.id} size={36} />
+        {isFailed && (
+          <div className="absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-white shadow-sm">
+            <AlertTriangle className="size-2.5 text-red-500" strokeWidth={2.5} />
+          </div>
+        )}
       </div>
 
       <div className="min-w-0 flex-1 relative z-[1]">
@@ -99,7 +109,10 @@ function AiEventCard({
         </p>
         <p className={cn(
           "truncate text-sm font-normal leading-4 mt-0.5",
-          isStreaming ? "text-blue-500" : isFuture ? "text-slate-400 italic" : "text-[#8f8f8f]",
+          isStreaming ? "text-blue-500"
+            : isFailed ? "text-red-600 font-medium"
+              : isFuture ? "text-slate-400 italic"
+                : "text-[#8f8f8f]",
         )}>
           {event.startTime} · {statusText}
         </p>
@@ -107,9 +120,13 @@ function AiEventCard({
 
       <div className={cn(
         "shrink-0 transition-colors duration-200 relative z-[1]",
-        isStreaming ? "text-blue-400" : "text-[#8f8f8f] group-hover:text-[#0d0d0d]",
+        isStreaming ? "text-blue-400"
+          : isFailed ? "text-red-500"
+            : "text-[#8f8f8f] group-hover:text-[#0d0d0d]",
       )}>
-        {isFuture ? (
+        {isFailed ? (
+          <AlertTriangle className="size-4" strokeWidth={2} />
+        ) : isFuture ? (
           <CalendarDays className="size-4" strokeWidth={2} />
         ) : (
           <ChevronRight className="size-4" strokeWidth={2} />

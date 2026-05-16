@@ -25,7 +25,15 @@ export interface AiEventContent {
   emailDrafts: EmailDraft[]
 }
 
-export type EventStatus = "loading" | "draft" | "confirmed" | "auto-published" | "skipped"
+export type EventStatus =
+  | "loading"
+  | "draft"
+  | "confirmed"
+  | "auto-published"
+  | "skipped"
+  | "failed"
+
+export type EventFailureReason = "oauth-expired" | "oauth-cancelled" | "data-source-error"
 
 export type BuildPhaseStatus = "pending" | "running" | "auth-required" | "done" | "error" | "paused"
 
@@ -68,6 +76,9 @@ export interface CalendarEvent {
   chatSessionId?: string
   plan?: EventPlan
   buildPhases?: BuildPhase[]
+  failureReason?: EventFailureReason
+  failureDetail?: string
+  previousStatus?: EventStatus
 }
 
 export interface ChatSession {
@@ -84,6 +95,8 @@ export interface ChatSession {
 }
 
 export type PageView = "calendar" | "chat"
+
+export type SidebarType = "calendar" | "agents"
 
 export type TrustMode = "confirm" | "auto"
 

@@ -1,12 +1,22 @@
 import { create } from "zustand"
 import { format, addDays, addWeeks, subWeeks } from "date-fns"
-import type { CalendarEvent, PageView, TrustMode, AiEventContent, EventPlan } from "@/types"
+import type {
+  CalendarEvent,
+  PageView,
+  SidebarType,
+  TrustMode,
+  AiEventContent,
+  EventPlan,
+  EventFailureReason,
+} from "@/types"
 import { useChatStore } from "./chatStore"
 
 interface CalendarState {
   currentDate: Date
   events: CalendarEvent[]
   pageView: PageView
+  sidebarType: SidebarType
+  sidebarCollapsed: boolean
   selectedEventId: string | null
   floatingEventIds: string[]
   trustMode: TrustMode
@@ -16,6 +26,8 @@ interface CalendarState {
 
   setCurrentDate: (date: Date) => void
   setPageView: (view: PageView) => void
+  setSidebarType: (type: SidebarType) => void
+  toggleSidebarCollapsed: () => void
   nextWeek: () => void
   prevWeek: () => void
   addEvent: (event: CalendarEvent) => void
@@ -26,6 +38,7 @@ interface CalendarState {
   confirmEvent: (id: string) => void
   skipEvent: (id: string) => void
   setTrustMode: (mode: TrustMode) => void
+  applyAutoPublishToDrafts: () => number
   toggleEmailSelected: (eventId: string, emailId: string) => void
   setEditingLinkedin: (editing: boolean) => void
   setEditedLinkedinDraft: (draft: string) => void
@@ -36,6 +49,8 @@ interface CalendarState {
   fillEventContent: (eventId?: string) => void
   createRecurringEvents: () => void
   streamAiEvents: () => void
+  markEventFailed: (id: string, reason: EventFailureReason, detail?: string) => void
+  reauthorizeEvent: (id: string) => void
 }
 
 const today = new Date()
@@ -215,6 +230,15 @@ export const aiEventsData: CalendarEvent[] = [
   },
 ]
 
+function stripStatusBadge(title: string): string {
+  return title.replace(/\s*[✅⚠️]\s*$/u, "").trim()
+}
+
+function appendStatusBadge(title: string, badge: "✅" | "⚠️"): string {
+  const clean = stripStatusBadge(title)
+  return `${clean} ${badge}`
+}
+
 function streamText(
   fullText: string,
   onUpdate: (partial: string) => void,
@@ -238,6 +262,8 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   currentDate: today,
   events: personalEvents,
   pageView: "calendar",
+  sidebarType: "calendar",
+  sidebarCollapsed: false,
   selectedEventId: null,
   floatingEventIds: [],
   trustMode: "confirm",
@@ -247,6 +273,8 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   setCurrentDate: (date) => set({ currentDate: date }),
   setPageView: (view) => set({ pageView: view }),
+  setSidebarType: (type) => set({ sidebarType: type }),
+  toggleSidebarCollapsed: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   nextWeek: () => set((s) => ({ currentDate: addWeeks(s.currentDate, 1) })),
   prevWeek: () => set((s) => ({ currentDate: subWeeks(s.currentDate, 1) })),
   addEvent: (event) => set((s) => ({ events: [...s.events, event] })),
@@ -585,53 +613,94 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   confirmEvent: (id) =>
     set((s) => ({
-      events: s.events.map((e) =>
-        e.id === id
-          ? {
-              ...e,
-              status: "confirmed",
-              tags: ["LinkedIn 帖子已发", `${e.aiContent?.emailDrafts.filter((d) => d.selected).length ?? 0} 封邮件已发`],
-              title: e.title.replace("待你确认", "").replace("新房源", "新房源 ✅").trim(),
-            }
-          : e,
-      ),
+      events: s.events.map((e) => {
+        if (e.id !== id) return e
+        const selectedEmails = e.aiContent?.emailDrafts.filter((d) => d.selected) ?? []
+        const tags: string[] = ["LinkedIn 帖子已发"]
+        if (selectedEmails.length > 0) {
+          tags.push(`${selectedEmails.length} 封邮件已发`)
+        } else if ((e.aiContent?.emailDrafts.length ?? 0) > 0) {
+          tags.push("邮件已跳过")
+        }
+        return {
+          ...e,
+          status: "confirmed",
+          tags,
+          title: appendStatusBadge(stripStatusBadge(e.title), "✅"),
+        }
+      }),
     })),
 
   skipEvent: (id) =>
     set((s) => ({
       events: s.events.map((e) =>
         e.id === id
-          ? { ...e, status: "skipped", tags: ["已跳过"] }
+          ? { ...e, status: "skipped", tags: ["已跳过"], title: stripStatusBadge(e.title) }
           : e,
       ),
     })),
 
-  setTrustMode: (mode) =>
+  setTrustMode: (mode) => set({ trustMode: mode }),
+
+  applyAutoPublishToDrafts: () => {
+    const drafts = get().events.filter((e) => e.isAiGenerated && e.status === "draft" && e.aiContent)
+    if (drafts.length === 0) return 0
     set((s) => ({
-      trustMode: mode,
       events: s.events.map((e) => {
-        if (!e.isAiGenerated) return e
-        if (mode === "auto" && e.status === "draft") {
-          return {
-            ...e,
-            status: "auto-published" as const,
-            tags: ["LinkedIn 帖子已发", `${e.aiContent?.emailDrafts.length ?? 0} 封邮件已发`],
-            title: e.title.includes("无新增")
-              ? "今日市场速报 — 已自动发布 ✅"
-              : `今日市场速报 — ${e.aiContent?.newListings ?? 0} 套新房源 · 已自动发布 ✅`,
-          }
+        if (!e.isAiGenerated || e.status !== "draft" || !e.aiContent) return e
+        const selected = e.aiContent.emailDrafts.filter((d) => d.selected)
+        const tags: string[] = ["LinkedIn 帖子已发"]
+        if (selected.length > 0) tags.push(`${selected.length} 封邮件已发`)
+        return {
+          ...e,
+          status: "auto-published" as const,
+          tags,
+          title: appendStatusBadge(stripStatusBadge(e.title), "✅"),
         }
-        if (mode === "confirm" && e.status === "auto-published") {
-          return {
-            ...e,
-            status: "draft" as const,
-            tags: ["自动生成", "待你确认"],
-            title: e.aiContent?.newListings
-              ? `哥伦布今日市场速报 — 富兰克林县 ${e.aiContent.newListings} 套新房源`
-              : "哥伦布今日市场 — 无新增独栋住宅",
-          }
+      }),
+    }))
+    return drafts.length
+  },
+
+  markEventFailed: (id, reason, detail) =>
+    set((s) => ({
+      events: s.events.map((e) => {
+        if (e.id !== id) return e
+        const reasonLabel =
+          reason === "oauth-expired"
+            ? "OAuth 已过期"
+            : reason === "oauth-cancelled"
+              ? "授权被取消"
+              : "数据源异常"
+        return {
+          ...e,
+          previousStatus: e.previousStatus ?? e.status,
+          status: "failed" as const,
+          failureReason: reason,
+          failureDetail: detail,
+          tags: [reasonLabel, "需要处理"],
         }
-        return e
+      }),
+    })),
+
+  reauthorizeEvent: (id) =>
+    set((s) => ({
+      events: s.events.map((e) => {
+        if (e.id !== id) return e
+        const restored = e.previousStatus ?? "draft"
+        const tagsByStatus: Record<string, string[]> = {
+          draft: ["自动生成", "待你确认"],
+          confirmed: ["LinkedIn 帖子已发"],
+          "auto-published": ["LinkedIn 帖子已发"],
+        }
+        return {
+          ...e,
+          status: restored,
+          tags: tagsByStatus[restored] ?? e.tags,
+          failureReason: undefined,
+          failureDetail: undefined,
+          previousStatus: undefined,
+        }
       }),
     })),
 
@@ -658,18 +727,24 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   confirmWithEdit: (id, newDraft) =>
     set((s) => ({
       editingLinkedin: false,
-      events: s.events.map((e) =>
-        e.id === id
-          ? {
-              ...e,
-              status: "confirmed" as const,
-              tags: ["LinkedIn 帖子已发", `${e.aiContent?.emailDrafts.filter((d) => d.selected).length ?? 0} 封邮件已发`],
-              title: e.title.replace("待你确认", "").trim() + " ✅",
-              aiContent: e.aiContent
-                ? { ...e.aiContent, linkedinDraft: newDraft }
-                : e.aiContent,
-            }
-          : e,
-      ),
+      events: s.events.map((e) => {
+        if (e.id !== id) return e
+        const selectedEmails = e.aiContent?.emailDrafts.filter((d) => d.selected) ?? []
+        const tags: string[] = ["LinkedIn 帖子已发"]
+        if (selectedEmails.length > 0) {
+          tags.push(`${selectedEmails.length} 封邮件已发`)
+        } else if ((e.aiContent?.emailDrafts.length ?? 0) > 0) {
+          tags.push("邮件已跳过")
+        }
+        return {
+          ...e,
+          status: "confirmed" as const,
+          tags,
+          title: appendStatusBadge(stripStatusBadge(e.title), "✅"),
+          aiContent: e.aiContent
+            ? { ...e.aiContent, linkedinDraft: newDraft }
+            : e.aiContent,
+        }
+      }),
     })),
 }))

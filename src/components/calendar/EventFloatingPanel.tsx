@@ -3,6 +3,7 @@ import {
   X,
   Check,
   Lock,
+  Unlock,
   ChevronDown,
   ChevronRight,
   Loader2,
@@ -10,9 +11,15 @@ import {
   Circle,
   Shield,
   Pause,
+  Pencil,
+  SkipForward,
+  AlertTriangle,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react"
 import { isAfter, isSameDay } from "date-fns"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import { useCalendarStore } from "@/stores/calendarStore"
 import { useChatStore } from "@/stores/chatStore"
 import { SkillHashGlyph } from "./SkillHashGlyph"
@@ -61,6 +68,10 @@ function EmailRow({ draft, eventId }: { draft: EmailDraft; eventId: string }) {
 function SummaryTab({ eventId }: { eventId: string }) {
   const events = useCalendarStore((s) => s.events)
   const streamingEventId = useCalendarStore((s) => s.streamingEventId)
+  const editingLinkedin = useCalendarStore((s) => s.editingLinkedin)
+  const editedLinkedinDraft = useCalendarStore((s) => s.editedLinkedinDraft)
+  const setEditingLinkedin = useCalendarStore((s) => s.setEditingLinkedin)
+  const setEditedLinkedinDraft = useCalendarStore((s) => s.setEditedLinkedinDraft)
   const [emailsOpen, setEmailsOpen] = useState(false)
 
   const event = events.find((e) => e.id === eventId)
@@ -68,13 +79,14 @@ function SummaryTab({ eventId }: { eventId: string }) {
 
   const ai = event.aiContent
   const isStreaming = streamingEventId === event.id
-  const isDraft = event.status === "draft" || event.status === "loading"
+  const isLoading = event.status === "loading"
+  const isFailed = event.status === "failed"
 
-  if (!ai || isDraft) {
+  if (!ai || isLoading) {
     return (
       <div className="px-4 py-6 text-center">
         <p className="text-[13px] text-slate-400">
-          {isDraft && ai ? "待确认内容请在下方输入框区域审核" : (event.description ?? "暂无已确认的结果")}
+          {isLoading ? "正在准备…" : (event.description ?? "暂无已确认的结果")}
         </p>
       </div>
     )
@@ -82,6 +94,25 @@ function SummaryTab({ eventId }: { eventId: string }) {
 
   return (
     <div className="px-4 py-3 space-y-3">
+      {isFailed && (
+        <div className="rounded-xl bg-red-50 border border-red-200 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="size-3.5 text-red-500 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[12px] font-semibold text-red-700 leading-snug">
+                {event.failureReason === "oauth-expired" && "授权已过期，发布通道暂停"}
+                {event.failureReason === "oauth-cancelled" && "授权被取消，发布通道暂停"}
+                {event.failureReason === "data-source-error" && "数据源异常"}
+                {!event.failureReason && "运行异常"}
+              </p>
+              {event.failureDetail && (
+                <p className="text-[12px] text-red-600/80 leading-relaxed mt-0.5">{event.failureDetail}</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {(ai.marketOverview || isStreaming) && (
         <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2.5">
           <p className="text-[11px] text-slate-400 uppercase tracking-wider font-medium mb-1.5">运行结果</p>
@@ -120,13 +151,48 @@ function SummaryTab({ eventId }: { eventId: string }) {
 
       {(ai.linkedinDraft || (isStreaming && ai.medianPrice)) && (
         <div className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-2.5">
-          <p className="text-[11px] text-blue-400 uppercase tracking-wider font-medium mb-1.5">LinkedIn 草稿</p>
-          <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-line">
-            {ai.linkedinDraft}
-            {isStreaming && ai.linkedinDraft && ai.emailDrafts.length === 0 && (
-              <span className="animate-pulse text-blue-400">|</span>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[11px] text-blue-400 uppercase tracking-wider font-medium">LinkedIn 草稿</p>
+            {!isStreaming && event.status === "draft" && !editingLinkedin && (
+              <button
+                onClick={() => {
+                  setEditedLinkedinDraft(ai.linkedinDraft)
+                  setEditingLinkedin(true)
+                }}
+                className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-700 transition-colors"
+              >
+                <Pencil className="size-3" /> 编辑
+              </button>
             )}
-          </p>
+          </div>
+          {editingLinkedin && event.status === "draft" ? (
+            <div className="space-y-2">
+              <textarea
+                value={editedLinkedinDraft}
+                onChange={(e) => setEditedLinkedinDraft(e.target.value)}
+                className="w-full min-h-[90px] resize-y rounded-lg border border-blue-200 bg-white px-2.5 py-2 text-[13px] text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setEditingLinkedin(false)
+                    setEditedLinkedinDraft(ai.linkedinDraft)
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors px-2 py-1"
+                >
+                  取消
+                </button>
+                <span className="text-[10px] text-slate-300">{editedLinkedinDraft.length} 字</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-line">
+              {ai.linkedinDraft}
+              {isStreaming && ai.linkedinDraft && ai.emailDrafts.length === 0 && (
+                <span className="animate-pulse text-blue-400">|</span>
+              )}
+            </p>
+          )}
         </div>
       )}
 
@@ -137,7 +203,7 @@ function SummaryTab({ eventId }: { eventId: string }) {
             className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-slate-600 transition-colors uppercase tracking-wider font-medium"
           >
             {emailsOpen ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-            {ai.emailDrafts.length} 封邮件草稿
+            {ai.emailDrafts.length} 封邮件草稿 · 已选 {ai.emailDrafts.filter((d) => d.selected).length}
           </button>
           {emailsOpen && (
             <div className="mt-1.5 space-y-0.5">
@@ -348,12 +414,28 @@ function EventFloatingPanelItem({
   const events = useCalendarStore((s) => s.events)
   const trustMode = useCalendarStore((s) => s.trustMode)
   const setTrustMode = useCalendarStore((s) => s.setTrustMode)
+  const applyAutoPublishToDrafts = useCalendarStore((s) => s.applyAutoPublishToDrafts)
+  const confirmEvent = useCalendarStore((s) => s.confirmEvent)
+  const skipEvent = useCalendarStore((s) => s.skipEvent)
+  const confirmWithEdit = useCalendarStore((s) => s.confirmWithEdit)
+  const editingLinkedin = useCalendarStore((s) => s.editingLinkedin)
+  const editedLinkedinDraft = useCalendarStore((s) => s.editedLinkedinDraft)
+  const setEditingLinkedin = useCalendarStore((s) => s.setEditingLinkedin)
+  const setEditedLinkedinDraft = useCalendarStore((s) => s.setEditedLinkedinDraft)
   const streamingEventId = useCalendarStore((s) => s.streamingEventId)
+  const restartFailedEventAuth = useChatStore((s) => s.restartFailedEventAuth)
+  const activeBuilds = useChatStore((s) => s.activeBuilds)
+  const buildPhases = useChatStore((s) => s.buildPhases)
   const messages = useChatStore((s) => s.messages)
+  const [trustHint, setTrustHint] = useState<string | null>(null)
 
   const event = useMemo(
     () => events.find((e) => e.id === eventId),
     [events, eventId],
+  )
+
+  const isBuilding = !!activeBuilds[eventId] || (
+    event?.status === "loading" && buildPhases.some((p) => p.status === "running" || p.status === "auth-required")
   )
 
   const isFutureEvent = useMemo(() => {
@@ -363,11 +445,12 @@ function EventFloatingPanelItem({
     return isAfter(eventDate, today) && !isSameDay(eventDate, today)
   }, [event])
 
-  const [activeTab, setActiveTab] = useState<TabKey>(isFutureEvent ? "plan" : "summary")
+  const defaultTab = isBuilding ? "build" : isFutureEvent ? "plan" : "summary"
+  const [activeTab, setActiveTab] = useState<TabKey>(defaultTab)
 
   useEffect(() => {
-    setActiveTab(isFutureEvent ? "plan" : "summary")
-  }, [isFutureEvent, eventId])
+    setActiveTab(isBuilding ? "build" : isFutureEvent ? "plan" : "summary")
+  }, [isFutureEvent, isBuilding, eventId])
 
   const chatCount = messages.length
 
@@ -375,6 +458,7 @@ function EventFloatingPanelItem({
 
   const ai = event.aiContent
   const isDraft = event.status === "draft"
+  const isFailed = event.status === "failed"
   const isActioned = event.status === "confirmed" || event.status === "auto-published" || event.status === "skipped"
   const isStreaming = streamingEventId === event.id
 
@@ -384,6 +468,31 @@ function EventFloatingPanelItem({
     { key: "build", label: "构建", show: !isFutureEvent },
     { key: "chat", label: "对话", show: !isFutureEvent },
   ]
+
+  const handleEnableAuto = () => {
+    setTrustMode("auto")
+    setTrustHint("已开启自动发布，未来生成的草稿将直接发出。当前草稿仍需你确认。")
+    setTimeout(() => setTrustHint(null), 4000)
+  }
+
+  const handleApplyAutoNow = () => {
+    const count = applyAutoPublishToDrafts()
+    if (count > 0) {
+      setTrustHint(`已将 ${count} 个草稿一并标记为已发布。`)
+      setTimeout(() => setTrustHint(null), 3500)
+    }
+  }
+
+  const handleSaveEdit = () => {
+    const text = editedLinkedinDraft.trim()
+    if (!text) return
+    confirmWithEdit(event.id, text)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingLinkedin(false)
+    setEditedLinkedinDraft(ai?.linkedinDraft ?? "")
+  }
 
   const visibleTabs = tabs.filter((t) => t.show)
 
@@ -399,6 +508,10 @@ function EventFloatingPanelItem({
               {isStreaming ? (
                 <span className="flex items-center gap-1 text-[11px] text-blue-500 font-medium">
                   <Loader2 className="size-2.5 animate-spin" /> 生成中
+                </span>
+              ) : isFailed ? (
+                <span className="flex items-center gap-1 text-[11px] text-red-500 font-medium">
+                  <AlertTriangle className="size-2.5" /> 需要重新授权
                 </span>
               ) : isFutureEvent ? (
                 <span className="text-[11px] text-slate-400 italic">计划中</span>
@@ -457,25 +570,119 @@ function EventFloatingPanelItem({
         {activeTab === "chat" && <ChatTab />}
       </div>
 
-      {/* action buttons (only on summary tab, only for confirmed/actioned events) */}
-      {activeTab === "summary" && ai && !isStreaming && !isFutureEvent && !isDraft && (
+      {/* action buttons (only on summary tab) */}
+      {activeTab === "summary" && ai && !isStreaming && !isFutureEvent && (
         <div className="shrink-0 border-t border-slate-100 px-4 py-2.5 space-y-2">
-          <div className="flex items-center justify-between">
-            {trustMode === "auto" && (
-              <button
-                onClick={() => setTrustMode("confirm")}
-                className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+          {trustHint && (
+            <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-2.5 py-1.5 leading-snug">
+              {trustHint}
+            </p>
+          )}
+
+          {isDraft && editingLinkedin && (
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSaveEdit}
+                disabled={!editedLinkedinDraft.trim()}
+                className="flex-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg h-9 text-[13px]"
               >
-                <Lock className="size-3" /> 改回需要确认
-              </button>
-            )}
-            {isActioned && trustMode === "confirm" && (
-              <span className="text-[11px] text-slate-300">
-                {event.status === "confirmed" && "已确认发布"}
-                {event.status === "skipped" && "已跳过本日"}
-              </span>
-            )}
-          </div>
+                <Check className="size-3.5 mr-1" /> 编辑后发布
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCancelEdit}
+                className="rounded-lg h-9 text-[13px] px-3"
+              >
+                取消
+              </Button>
+            </div>
+          )}
+
+          {isDraft && !editingLinkedin && (
+            <>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => confirmEvent(event.id)}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg h-9 text-[13px]"
+                >
+                  <Check className="size-3.5 mr-1" /> 确认发布
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => skipEvent(event.id)}
+                  className="rounded-lg h-9 text-[13px] px-3"
+                >
+                  <SkipForward className="size-3.5 mr-1" /> 跳过
+                </Button>
+              </div>
+              {trustMode === "confirm" && (
+                <button
+                  onClick={handleEnableAuto}
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <Unlock className="size-3" /> 以后不用确认，直接发
+                </button>
+              )}
+              {trustMode === "auto" && (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setTrustMode("confirm")}
+                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <Lock className="size-3" /> 改回需要确认
+                  </button>
+                  <button
+                    onClick={handleApplyAutoNow}
+                    className="flex items-center gap-1 text-[11px] text-blue-500 hover:text-blue-700 transition-colors"
+                  >
+                    <Sparkles className="size-3" /> 一键应用到现存草稿
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {isFailed && (
+            <>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => restartFailedEventAuth(event.id)}
+                  className="flex-1 bg-red-600 hover:bg-red-500 text-white rounded-lg h-9 text-[13px]"
+                >
+                  <RefreshCw className="size-3.5 mr-1" /> 重新授权
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => skipEvent(event.id)}
+                  className="rounded-lg h-9 text-[13px] px-3"
+                >
+                  <SkipForward className="size-3.5 mr-1" /> 跳过本次
+                </Button>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                重新授权后，该 Agent 将恢复正常发布。
+              </p>
+            </>
+          )}
+
+          {isActioned && (
+            <div className="flex items-center justify-between">
+              {trustMode === "auto" ? (
+                <button
+                  onClick={() => setTrustMode("confirm")}
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <Lock className="size-3" /> 改回需要确认
+                </button>
+              ) : (
+                <span className="text-[11px] text-slate-300">
+                  {event.status === "confirmed" && "已确认发布"}
+                  {event.status === "auto-published" && "已自动发布"}
+                  {event.status === "skipped" && "已跳过本日"}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

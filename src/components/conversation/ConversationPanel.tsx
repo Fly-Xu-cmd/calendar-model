@@ -1,19 +1,12 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import {
   ArrowUp,
-  Loader2,
   X,
   Pencil,
   CornerDownLeft,
   Send,
-  Pause,
-  Play,
   Shield,
   Globe,
-  CheckCircle2,
-  Circle,
-  ChevronRight,
-  ChevronDown,
   Zap,
   ClipboardList,
   Plus,
@@ -23,7 +16,7 @@ import { useChatStore } from "@/stores/chatStore"
 import { useCalendarStore } from "@/stores/calendarStore"
 import { SkillHashGlyph } from "@/components/calendar/SkillHashGlyph"
 import { EventFloatingPanel } from "@/components/calendar/EventFloatingPanel"
-import type { ChatAction, ChatMessage, BuildPhase } from "@/types"
+import type { ChatAction, ChatMessage } from "@/types"
 
 const AGENT_LIST = [
   { id: "ai-assistant", name: "助理", seedText: "ai-assistant", label: "随时吩咐" },
@@ -69,11 +62,22 @@ function AgentBar() {
   const focusBuild = useChatStore((s) => s.focusBuild)
 
   const aiEvents = useMemo(
-    () => events.filter((e) => e.isAiGenerated),
-    [events],
+    () => events.filter((e) => {
+      if (!e.isAiGenerated) return false
+      const done = e.status === "confirmed" || e.status === "auto-published" || e.status === "skipped"
+      if (done) return false
+      if (!!activeBuilds[e.id]) return true
+      if (streamingEventId === e.id) return true
+      if (e.status === "loading") return true
+      if (e.status === "failed") return true
+      if (e.status === "draft") return true
+      if (pendingAuth?.eventId === e.id) return true
+      return false
+    }),
+    [events, activeBuilds, streamingEventId, pendingAuth],
   )
 
-  if (aiEvents.length === 0 && Object.keys(activeBuilds).length === 0) return null
+  if (aiEvents.length === 0) return null
 
   return (
     <div className="flex items-center gap-1.5 px-3 py-1.5 overflow-x-auto scrollbar-none">
@@ -83,7 +87,8 @@ function AgentBar() {
         const isLoading = event.status === "loading"
         const build = activeBuilds[event.id]
         const isBuildingThis = !!build
-        const needsAttention = pendingAuth?.eventId === event.id
+        const isFailed = event.status === "failed"
+        const needsAttention = pendingAuth?.eventId === event.id || isFailed
         const isDraft = event.status === "draft" && event.aiContent?.marketOverview
         const shortTitle = event.title.length > 12 ? event.title.slice(0, 12) + "…" : event.title
 
@@ -141,135 +146,6 @@ function AgentBar() {
           </button>
         )
       })}
-    </div>
-  )
-}
-
-function BuildPhaseNode({ phase, depth = 0 }: { phase: BuildPhase; depth?: number }) {
-  const [collapsed, setCollapsed] = useState(true)
-  const authorizeBuildPhase = useChatStore((s) => s.authorizeBuildPhase)
-  const hasChildren = phase.children && phase.children.length > 0
-  const hasContent = !!phase.detail || hasChildren
-
-  const statusIcon = (() => {
-    switch (phase.status) {
-      case "done":
-        return <CheckCircle2 className="size-3.5 text-green-500 shrink-0" />
-      case "running":
-        return <Loader2 className="size-3.5 text-blue-500 animate-spin shrink-0" />
-      case "auth-required":
-        return <Shield className="size-3.5 text-amber-500 shrink-0" />
-      case "error":
-        return <Circle className="size-3.5 text-red-400 shrink-0" />
-      case "paused":
-        return <Pause className="size-3.5 text-slate-400 shrink-0" />
-      default:
-        return <Circle className="size-3.5 text-slate-300 shrink-0" />
-    }
-  })()
-
-  return (
-    <div className={cn(depth > 0 && "ml-4 border-l-2 border-slate-100 pl-3")}>
-      <button
-        onClick={() => {
-          if (phase.status === "auth-required" && phase.authType) {
-            authorizeBuildPhase(phase.id)
-            return
-          }
-          if (hasContent) setCollapsed(!collapsed)
-        }}
-        className={cn(
-          "flex w-full items-center gap-2 py-1.5 text-[13px] rounded-lg transition-colors",
-          phase.status === "auth-required"
-            ? "cursor-pointer hover:bg-amber-50 -mx-1.5 px-1.5"
-            : hasContent
-              ? "cursor-pointer hover:bg-slate-50 -mx-1.5 px-1.5"
-              : "",
-        )}
-      >
-        {hasContent && phase.status !== "auth-required" ? (
-          collapsed ? <ChevronRight className="size-3 text-slate-400 shrink-0" /> : <ChevronDown className="size-3 text-slate-400 shrink-0" />
-        ) : (
-          <div className="w-3 shrink-0" />
-        )}
-        {statusIcon}
-        <span className={cn(
-          "flex-1 text-left",
-          phase.status === "done" ? "text-slate-400 line-through" : phase.status === "running" ? "text-blue-600 font-medium" : phase.status === "auth-required" ? "text-amber-600 font-medium" : "text-slate-600",
-        )}>
-          {phase.title}
-        </span>
-        {phase.status === "auth-required" && (
-          <span className="text-[11px] text-amber-500 bg-amber-50 border border-amber-200 rounded-md px-2 py-0.5 shrink-0">
-            {phase.authType === "oauth" ? "点击授权" : "授权域名"}
-          </span>
-        )}
-      </button>
-
-      {!collapsed && phase.detail && phase.status !== "auth-required" && (
-        <div className="ml-8 mb-1 rounded-lg bg-slate-50 border border-slate-100 px-2.5 py-1.5 text-[11px] text-slate-500 leading-relaxed whitespace-pre-line">
-          {phase.detail}
-        </div>
-      )}
-
-      {!collapsed && hasChildren && (
-        <div className="mt-0.5">
-          {phase.children!.map((child) => (
-            <BuildPhaseNode key={child.id} phase={child} depth={depth + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BuildProcessCard() {
-  const buildPhases = useChatStore((s) => s.buildPhases)
-  const buildPaused = useChatStore((s) => s.buildPaused)
-  const toggleBuildPause = useChatStore((s) => s.toggleBuildPause)
-  const focusedBuildEventId = useChatStore((s) => s.focusedBuildEventId)
-
-  if (buildPhases.length === 0) return null
-
-  const buildEventId = focusedBuildEventId ?? "ai-today"
-
-  const doneCount = buildPhases.filter((p) => p.status === "done").length
-  const total = buildPhases.length
-  const progress = Math.round((doneCount / total) * 100)
-  const needsAuth = buildPhases.some((p) => p.status === "auth-required")
-
-  return (
-    <div className="card-enter rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-200/40 overflow-hidden">
-      <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <div className="flex items-center gap-2">
-          <SkillHashGlyph seedText={buildEventId} size={20} />
-          <span className="text-[13px] font-semibold text-slate-700">
-            {needsAuth ? "需要授权" : buildPaused ? "已暂停" : "构建中…"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-400">{progress}%</span>
-          <button
-            onClick={toggleBuildPause}
-            className="rounded-md p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          >
-            {buildPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-          </button>
-        </div>
-      </div>
-
-      <div className="mx-4 mb-2 h-1 rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className="h-full rounded-full bg-blue-500 transition-all duration-500"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-
-      <div className="px-3 pb-3 max-h-[200px] overflow-y-auto">
-        {buildPhases.map((phase) => (
-          <BuildPhaseNode key={phase.id} phase={phase} />
-        ))}
-      </div>
     </div>
   )
 }
@@ -574,8 +450,15 @@ function AgentSessionBar({ fallback }: { fallback?: React.ReactNode }) {
   const openFloating = useCalendarStore((s) => s.openFloating)
 
   const sessionList = useMemo(
-    () => Object.values(sessions).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-    [sessions],
+    () => Object.values(sessions).filter((session) => {
+      const linkedEvent = events.find((e) => e.isAiGenerated && e.chatSessionId === session.id)
+      if (linkedEvent) {
+        const done = linkedEvent.status === "confirmed" || linkedEvent.status === "auto-published" || linkedEvent.status === "skipped"
+        if (done) return false
+      }
+      return true
+    }).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
+    [sessions, events],
   )
 
   const getAgentInfo = useCallback((session: typeof sessionList[0]) => {
@@ -616,12 +499,13 @@ function AgentSessionBar({ fallback }: { fallback?: React.ReactNode }) {
           const buildId = session.focusedBuildEventId
           const build = buildId ? activeBuilds[buildId] : null
           if (build?.pendingAuth) return true
+          const linkedEvent = events.find((e) => e.isAiGenerated && e.chatSessionId === session.id)
+          if (linkedEvent?.status === "failed") return true
           const msgs = session.messages
           if (msgs.length === 0 || session.isTyping) return false
           const lastMsg = [...msgs].reverse().find((m) => m.role === "barrage" || m.role === "assistant")
           if (lastMsg?.actions?.length) return true
           if (lastMsg?.inputPlaceholder) return true
-          const linkedEvent = events.find((e) => e.isAiGenerated && e.chatSessionId === session.id)
           if (linkedEvent?.status === "draft" && linkedEvent.aiContent?.marketOverview) return true
           return false
         })()
@@ -699,6 +583,7 @@ export function ConversationPanel() {
   const buildPhases = useChatStore((s) => s.buildPhases)
   const pendingAuth = useChatStore((s) => s.pendingAuth)
   const focusedBuildEventId = useChatStore((s) => s.focusedBuildEventId)
+  const sidebarType = useCalendarStore((s) => s.sidebarType)
   const currentAgent = useCurrentAgent()
   const topAuth = useMemo(() => {
     if (!pendingAuth) return null
@@ -731,8 +616,15 @@ export function ConversationPanel() {
 
   const stopCurrentWork = useChatStore((s) => s.stopCurrentWork)
 
+  const openFloating = useCalendarStore((s) => s.openFloating)
   const isBuilding = buildPhases.length > 0
   const isWorking = isTyping || buildPhases.some((p) => p.status === "running") || !!topAuth
+
+  useEffect(() => {
+    if (isBuilding && focusedBuildEventId && !floatingEventIds.includes(focusedBuildEventId)) {
+      openFloating(focusedBuildEventId)
+    }
+  }, [isBuilding, focusedBuildEventId])
 
   const handleSend = () => {
     const trimmed = value.trim()
@@ -748,6 +640,14 @@ export function ConversationPanel() {
     const msgs = useChatStore.getState().messages
     const last = [...msgs].reverse().find((m) => m.role === "barrage" || m.role === "assistant")
 
+    const clearLastActions = () => {
+      if (last?.actions) {
+        useChatStore.setState({
+          messages: msgs.map((m) => m.id === last.id ? { ...m, actions: undefined } : m),
+        })
+      }
+    }
+
     if (label === "确认发布" || label === "跳过本次") {
       const sid = useChatStore.getState().activeSessionId
       const evts = useCalendarStore.getState().events
@@ -758,22 +658,26 @@ export function ConversationPanel() {
         } else {
           useCalendarStore.getState().skipEvent(draft.id)
         }
-        if (last?.actions) {
-          useChatStore.setState({
-            messages: msgs.map((m) => m.id === last.id ? { ...m, actions: undefined } : m),
-          })
-        }
+        clearLastActions()
         return
       }
     }
 
-    if (last?.actions) {
-      useChatStore.setState({
-        messages: msgs.map((m) =>
-          m.id === last.id ? { ...m, actions: undefined } : m,
-        ),
-      })
+    const isReauthAction = label === "立即重新授权" || label.startsWith("重新")
+    const isDismissAuthAction = label === "稍后再说" || label === "晚点再说"
+    if (isReauthAction || isDismissAuthAction) {
+      const sid = useChatStore.getState().activeSessionId
+      const evts = useCalendarStore.getState().events
+      const failed = evts.find((e) => e.isAiGenerated && e.status === "failed" && e.chatSessionId === sid)
+        ?? evts.find((e) => e.isAiGenerated && e.status === "failed")
+      if (isReauthAction && failed) {
+        useChatStore.getState().restartFailedEventAuth(failed.id)
+      }
+      clearLastActions()
+      return
     }
+
+    clearLastActions()
     setDismissedMsgId(null)
     sendMessage(label)
   }
@@ -793,17 +697,17 @@ export function ConversationPanel() {
         </div>
       )}
 
-      {/* build process card */}
-      {buildPhases.length > 0 && !hasFloating && !topAuth && (
-        <div className="mb-2">
-          <BuildProcessCard />
-        </div>
-      )}
+      {/* build process now shown inside EventFloatingPanel's build tab */}
 
       {/* auth is now merged into OptionButtons above */}
 
-      {/* option buttons (includes auth as same-level options) */}
-      {(pendingActions || topAuth) && (
+      {/* Agent bar: always above input, hide only in agents view or when floating panel is open */}
+      {!hasFloating && sidebarType !== "agents" && (
+        <AgentSessionBar fallback={!pendingInput ? <AgentBar /> : undefined} />
+      )}
+
+      {/* option buttons — hide pendingActions when floating panel is open, but always show auth */}
+      {((pendingActions && !hasFloating) || topAuth) && (
         <div className="mb-2">
           <OptionButtons
             actions={[
@@ -828,8 +732,8 @@ export function ConversationPanel() {
         </div>
       )}
 
-      {/* input card (e.g. LinkedIn URL input) — hide during build */}
-      {pendingInput && !pendingActions && !topAuth && !isBuilding && (
+      {/* input card (e.g. LinkedIn URL input) — hide during build or when floating panel is open */}
+      {pendingInput && !pendingActions && !topAuth && !isBuilding && !hasFloating && (
         <div className="mb-2">
           <InputCard
             placeholder={pendingInput}
@@ -847,11 +751,6 @@ export function ConversationPanel() {
             }}
           />
         </div>
-      )}
-
-      {/* Agent bar: only show when NOT in build mode and no floating panel */}
-      {!hasFloating && !isBuilding && !pendingActions && !topAuth && (
-        <AgentSessionBar fallback={!pendingInput ? <AgentBar /> : undefined} />
       )}
 
       {/* input bar — always visible during build */}

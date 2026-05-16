@@ -112,6 +112,8 @@ interface ChatState {
   authorizeBuildPhase: (phaseId: string) => void
   cancelAuth: (phaseId: string) => void
   retryAuth: (phaseId: string) => void
+  restartFailedEventAuth: (eventId: string) => void
+  simulateAuthExpiry: (eventId: string) => void
   toggleBuildPause: () => void
   stopCurrentWork: () => void
   focusBuild: (eventId: string | null) => void
@@ -376,7 +378,7 @@ function progressBuildForEvent(
           : [],
         focusedBuildEventId: Object.keys(restBuilds).length > 0
           ? Object.keys(restBuilds)[0]
-          : null,
+          : s.focusedBuildEventId,
       }
       if (isOwnerActive || !ownerSessionId) {
         update.messages = [...s.messages, buildDoneMsg]
@@ -679,14 +681,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
   cancelAuth: (phaseId: string) => {
     const auth = get().pendingAuth
     const eventId = auth?.eventId ?? get().focusedBuildEventId ?? "ai-today"
+    const authLabel = auth?.label ?? "授权"
     const ownerSessionId = eventId.startsWith("agent-") ? eventId.slice(6) : null
     const isOwnerActive = ownerSessionId === get().activeSessionId
     const cancelMsg: ChatMessage = {
       id: `r-${Date.now()}-auth-cancel`,
       role: "barrage" as const,
-      content: "授权已取消。你可以稍后重试，或者先告诉我其他需要调整的地方。",
+      content: `**${authLabel}已跳过** ⚠️\n\n该 Agent 暂时无法发布到对应平台。你可以随时回来重新授权，或者先告诉我需要调整的地方。`,
       timestamp: new Date(),
+      icon: "auth" as const,
       agentId: eventId,
+      actions: [
+        { id: `retry-auth-${phaseId}`, label: `重新${authLabel}`, variant: "primary" as const },
+        { id: `dismiss-auth-${phaseId}`, label: "稍后再说", variant: "secondary" as const },
+      ],
     }
     set((s) => {
       const build = s.activeBuilds[eventId]
@@ -710,6 +718,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return update
     })
+
+    useCalendarStore.getState().markEventFailed(
+      eventId,
+      "oauth-cancelled",
+      `${authLabel}被跳过，相关平台无法发布。`,
+    )
   },
 
   retryAuth: (phaseId: string) => {
@@ -724,6 +738,79 @@ export const useChatStore = create<ChatState>((set, get) => ({
         activeBuilds: build ? { ...s.activeBuilds, [eventId]: { ...build, phases: newPhases, pendingAuth: retryingAuth } } : s.activeBuilds,
         pendingAuth: retryingAuth,
       }
+    })
+  },
+
+  restartFailedEventAuth: (eventId: string) => {
+    useCalendarStore.getState().reauthorizeEvent(eventId)
+
+    const ownerSessionId = eventId.startsWith("agent-") ? eventId.slice(6) : null
+    const recoverMsg: ChatMessage = {
+      id: `r-${Date.now()}-auth-restored`,
+      role: "barrage" as const,
+      content: "**授权已恢复** ✅\n\n该 Agent 已重新连接平台，下一次运行将正常发布。",
+      timestamp: new Date(),
+      icon: "auth" as const,
+      agentId: eventId,
+    }
+    set((s) => {
+      const isOwnerActive = ownerSessionId === s.activeSessionId
+      if (isOwnerActive || !ownerSessionId) {
+        return { messages: [...s.messages, recoverMsg] }
+      }
+      if (ownerSessionId && s.sessions[ownerSessionId]) {
+        return {
+          sessions: {
+            ...s.sessions,
+            [ownerSessionId]: {
+              ...s.sessions[ownerSessionId],
+              messages: [...s.sessions[ownerSessionId].messages, recoverMsg],
+            },
+          },
+        }
+      }
+      return {}
+    })
+  },
+
+  simulateAuthExpiry: (eventId: string) => {
+    useCalendarStore.getState().markEventFailed(
+      eventId,
+      "oauth-expired",
+      "LinkedIn OAuth 已过期，下次自动发布将失败。",
+    )
+
+    const ownerSessionId = eventId.startsWith("agent-") ? eventId.slice(6) : null
+    const warnMsg: ChatMessage = {
+      id: `r-${Date.now()}-auth-expired`,
+      role: "barrage" as const,
+      content:
+        "**LinkedIn 授权已过期** ⚠️\n\n这条日程对应的发布通道暂时不可用。点击日历卡片可以一键重新授权，期间生成的草稿不会自动发出。",
+      timestamp: new Date(),
+      icon: "auth" as const,
+      agentId: eventId,
+      actions: [
+        { id: `reauth-${eventId}`, label: "立即重新授权", variant: "primary" as const },
+        { id: `reauth-later-${eventId}`, label: "晚点再说", variant: "secondary" as const },
+      ],
+    }
+    set((s) => {
+      const isOwnerActive = ownerSessionId === s.activeSessionId
+      if (isOwnerActive || !ownerSessionId) {
+        return { messages: [...s.messages, warnMsg] }
+      }
+      if (ownerSessionId && s.sessions[ownerSessionId]) {
+        return {
+          sessions: {
+            ...s.sessions,
+            [ownerSessionId]: {
+              ...s.sessions[ownerSessionId],
+              messages: [...s.sessions[ownerSessionId].messages, warnMsg],
+            },
+          },
+        }
+      }
+      return {}
     })
   },
 
